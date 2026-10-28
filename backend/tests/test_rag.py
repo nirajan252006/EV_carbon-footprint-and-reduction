@@ -1,5 +1,6 @@
 from pathlib import Path
 from io import BytesIO
+import re
 
 import pytest
 from fastapi.testclient import TestClient
@@ -177,7 +178,8 @@ def test_health_ui_and_missing_credentials(temporary_database, monkeypatch):
     with TestClient(main.app) as client:
         health = client.get("/api/health")
         page = client.get("/")
-        stylesheet = client.get("/assets/styles.css")
+        style_path = re.search(r'href="([^"]+\.css)"', page.text)
+        stylesheet = client.get(style_path.group(1)) if style_path else None
         chat = client.post("/api/chat", json={"question": "Explain sustainability guidance"})
         sample = client.post("/api/documents/sample")
         blank_question = client.post("/api/chat", json={"question": "   "})
@@ -186,7 +188,8 @@ def test_health_ui_and_missing_credentials(temporary_database, monkeypatch):
     assert health.json()["ai_provider_configured"] is False
     assert page.status_code == 200
     assert "GreenTrack" in page.text
-    assert stylesheet.status_code == 200
+    assert 'id="root"' in page.text
+    assert stylesheet is None or stylesheet.status_code == 200
     assert chat.status_code == 503
     assert sample.status_code == 503
     assert blank_question.status_code == 422

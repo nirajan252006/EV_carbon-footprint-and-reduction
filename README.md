@@ -1,85 +1,152 @@
-# GreenTrack — Sustainability Knowledge Assistant
+# GreenTrack — Carbon Footprint Tracking
 
-GreenTrack's sustainability assistant uses retrieval-augmented generation (RAG)
-for questions about sustainability standards and guidance. RAG is appropriate
-here because answers should be grounded in changeable source documents and show
-where their claims came from. Carbon calculations and any future questions about
-a user's activity data must use the deterministic calculation/database layer,
-not vector retrieval or an LLM.
+GreenTrack is a React + TypeScript sustainability tracking prototype backed by
+FastAPI and SQLite. Its visual direction and household-first activity flow are
+based on the preserved `GreenTrack_redesigned.pptx` deck.
 
-## What is implemented
+## Features
 
-- FastAPI service with document upload/list/delete, health, and chat endpoints.
-- PDF, TXT, and Markdown extraction; text cleaning; page-aware chunks with overlap.
-- OpenAI `text-embedding-3-small` embeddings stored with document metadata in local
-  SQLite and cosine-similarity retrieval.
-- OpenAI `gpt-4o-mini` generation with retrieved passages explicitly treated as
-  untrusted evidence, source-marker validation, and an insufficient-evidence path.
-- A source-note document based on the [GHG Protocol Corporate Standard page](https://ghgprotocol.org/corporate-standard)
-  that can be indexed from the UI.
-- A responsive web interface for questions, source citations, document uploads,
-  ingestion status, and document deletion.
+- Individual, College, and Organization workspace onboarding.
+- Electricity, transport, fuel, and waste activity entry.
+- Deterministic `quantity × factor` calculation with category and unit checks.
+- Emission factors retain name, value, unit, publication, URL, year, region, and
+  assumptions; each activity stores an immutable factor snapshot.
+- Persisted monthly totals, category mix, trend, largest contributors, a monthly
+  target, qualitative recommendations, and CSV export.
+- Document RAG assistant for PDF, TXT, and Markdown sources: extraction,
+  chunking, OpenAI embeddings, SQLite vector persistence, similarity retrieval,
+  cited answer generation, and an insufficient-evidence response.
+- React Router page navigation, responsive Tailwind styling, Framer Motion
+  transitions, Recharts analytics, and Lucide icons.
 
-This repository was initially empty apart from its README and a one-line test
-file. It currently implements the RAG assistant slice, not the complete GreenTrack
-activity tracking, emissions calculations, analytics, authentication, or reporting
-application. Uploaded documents and chat are local-prototype functionality; there
-is no multi-user access control.
+## Scope and limitations
+
+- This is a **single local workspace prototype**, not an authenticated or
+  multi-user service. Workspace type selection is onboarding, not sign-in. There
+  are no user accounts, roles, tenant boundaries, or access controls. Uploaded
+  RAG sources are shared by the local instance; do not use private documents or
+  deploy this as a multi-organization service without adding authorization.
+- Emission factors are not preloaded. This repository does not bundle a verified,
+  current, region-specific factor set. Add values only after checking their
+  original source; the application does not independently verify user-submitted
+  factors and does not silently substitute generic values. Factor units use
+  `kgCO2e/<activity unit>`, for example `kgCO2e/kWh`.
+- Recommendations are deterministic qualitative prompts based on recorded
+  categories. They do not claim or quantify savings. Targets and period changes
+  are not proof that reductions were achieved.
+- CSV export is implemented; PDF export and challenges/rewards are not.
+- RAG is for questions grounded in guidance documents, not carbon calculations.
+  Retrieved passages enter generation as untrusted evidence, and responses must
+  cite sources returned by retrieval. RAG requires an OpenAI key; carbon tracking
+  works without it.
+
+## Architecture
+
+```text
+React + TypeScript + Vite
+  ├─ centralized typed API client ── /api (Vite proxy in development)
+  └─ onboarding, dashboard, activity, factors, assistant routes
+                │
+FastAPI        ├─ carbon calculation service → SQLite
+                └─ RAG ingestion → embeddings → similarity retrieval
+                     → evidence context in LLM prompt → cited response
+```
+
+Core records are stored in SQLite tables `workspace`, `emission_factors`, and
+`activities`. Activity records keep the input, result, period, and factor source
+snapshot. RAG documents and chunks are stored in `documents` and `chunks`.
+FastAPI serves the production React build from `frontend/dist`.
 
 ## Run locally
 
-Requirements: Python 3.10+ and an OpenAI API key.
+Requirements: Python 3.10+ and Node.js 20+.
+
+### Backend
+
+From the repository root:
 
 ```powershell
-cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-$env:OPENAI_API_KEY = "your-key"
-uvicorn app.main:app --reload
+python -m pip install -r backend\requirements.txt
+python -m uvicorn backend.app.main:app --reload --port 8000
 ```
 
-Open `http://127.0.0.1:8000`. Configure `OPENAI_API_KEY` only in the backend
-environment; it is never sent to the browser. Without a key, health and document
-listing remain available, while embedding and chat requests return an explicit
-configuration error.
+SQLite tables are initialized on startup. Add an OpenAI key to the **backend
+environment only** to enable RAG:
 
-Optional environment settings:
+```powershell
+$env:OPENAI_API_KEY = "your-key"
+```
+
+### React frontend
+
+In another terminal:
+
+```powershell
+cd frontend
+npm ci
+npm run dev
+```
+
+Open the Vite URL (normally `http://127.0.0.1:5173`). Requests to `/api` are
+proxied to `http://127.0.0.1:8000`; set `GREENTRACK_API_URL` before starting Vite
+to use another backend address. For a production frontend, run `npm run build`
+from `frontend`, then start FastAPI; the backend serves the compiled app and
+React routes from its root.
+
+`VITE_API_BASE_URL` can be set in a frontend `.env.local` for a separately hosted
+API. It is a public API URL, not a place for secrets.
+
+Optional backend environment variables:
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `GREENTRACK_DATABASE` | `greentrack.sqlite3` in the repository root | SQLite database path |
-| `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model |
-| `OPENAI_CHAT_MODEL` | `gpt-4o-mini` | Answer-generation model |
+| `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | RAG embedding model |
+| `OPENAI_CHAT_MODEL` | `gpt-4o-mini` | RAG answer model |
 | `RAG_TOP_K` | `4` | Maximum retrieved chunks |
 | `RAG_SIMILARITY_THRESHOLD` | `0.3` | Minimum cosine similarity |
 | `RAG_CHUNK_SIZE` | `900` | Chunk length in characters |
-| `RAG_CHUNK_OVERLAP` | `120` | Overlap between consecutive chunks |
+| `RAG_CHUNK_OVERLAP` | `120` | Overlap between chunks |
 
-## API
+## API summary
 
-- `GET /api/health` — application and AI-credential status.
-- `GET /api/documents` — indexed document metadata.
-- `POST /api/documents` — multipart upload (`file`, optional `source_url`).
-- `POST /api/documents/sample` — index the bundled GHG Protocol source notes.
+Carbon tracking:
+
+- `GET/PUT /api/workspace` — read or configure the local profile.
+- `GET/POST /api/factors` — list or add source-documented factors.
+- `GET/POST /api/activities` — list or calculate and save activities.
+- `DELETE /api/activities/{id}` — delete an activity.
+- `GET /api/dashboard?period=YYYY-MM` — totals, category distribution, and trend.
+- `GET /api/recommendations?period=YYYY-MM` — qualitative category guidance.
+- `PUT /api/targets` — configure the monthly target.
+- `GET /api/reports.csv?period=YYYY-MM` — period-scoped source-rich CSV.
+
+Knowledge assistant:
+
+- `GET /api/health` — application, provider, workspace, and document status.
+- `GET /api/documents` — list indexed source metadata.
+- `POST /api/documents` — upload multipart `file`, optional `source_url`.
+- `POST /api/documents/sample` — index bundled GHG Protocol source notes.
 - `DELETE /api/documents/{id}` — remove a document and its chunks.
-- `POST /api/chat` — JSON body `{"question":"..."}`; returns an answer and its
-  retrieved source records, or an explicit insufficient-evidence result.
+- `POST /api/chat` — JSON `{"question":"..."}`; returns answer, citations, and
+  an insufficient-evidence flag.
 
-Uploads are limited to 10 MB and PDF/TXT/Markdown. Duplicate content is detected
-by SHA-256. PDF image-only pages are not OCR'd and are rejected if no text can be
-extracted. Sources without a page number are cited by filename and URL.
+Uploads accept PDF, TXT, and Markdown up to 10 MB. Image-only PDFs are not
+OCR'd. Duplicate content is detected by SHA-256.
 
 ## Verification
 
-Run backend tests from the repository root:
-
 ```powershell
-python -m pip install -r backend/requirements.txt
-python -m pytest backend/tests -q
+python -m pytest backend\tests -q
+cd frontend
+npm run build
+npm audit
 ```
 
-Tests use a deterministic fake provider to verify extraction, chunking, persistence,
-retrieval, duplicate detection, deletion, and citation validation without making
-external API calls. Live embedding and generation require a valid API key and were
-not verified in an environment without credentials.
+Backend tests cover factor/unit validation, calculation correctness, dashboard
+aggregation, trends, targets, CSV data, document ingestion/retrieval, source
+citations, duplicate uploads, deletion, and missing AI credentials. Provider
+calls are tested with a fake provider. Live embeddings and LLM generation need
+credentials and were not verified in the test suite.
