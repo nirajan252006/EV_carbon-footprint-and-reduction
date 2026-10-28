@@ -3,6 +3,7 @@ import { ArrowRight, BookOpenCheck, Calculator, CircleHelp } from "lucide-react"
 import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { ErrorState, SuccessState } from "../components/Feedback";
+import { useWorkspace } from "../hooks/WorkspaceContext";
 import { PageHeader } from "../components/PageHeader";
 import { api } from "../services/api";
 import type { Activity, Category, Factor } from "../types/api";
@@ -20,6 +21,10 @@ function currentPeriod() {
 }
 
 export function ActivityPage() {
+  const { auth } = useWorkspace();
+  const accountType = auth?.user.account_type ?? "individual";
+  const factorPath = `/${accountType}/factors`;
+  const dashboardPath = `/${accountType}/dashboard`;
   const [category, setCategory] = useState<Category>("electricity");
   const [factors, setFactors] = useState<Factor[]>([]);
   const [factorId, setFactorId] = useState("");
@@ -143,7 +148,7 @@ export function ActivityPage() {
               <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
                 <CircleHelp className="mt-0.5 h-4 w-4 shrink-0" />
                 There is no factor configured for {category}. Add a source-verified factor first; GreenTrack will not guess one.
-                <Link to="/factors" className="shrink-0 font-semibold underline">Add factor</Link>
+                <Link to={factorPath} className="shrink-0 font-semibold underline">Add factor</Link>
               </p>
             )}
             {selectedFactor && (
@@ -180,7 +185,7 @@ export function ActivityPage() {
               <a href={saved.factor_source_url} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-leaf hover:underline">
                 <BookOpenCheck className="h-3.5 w-3.5" /> Verify factor source
               </a>
-              <Link to="/dashboard" className="mt-4 block text-sm font-semibold text-leaf hover:underline">View dashboard →</Link>
+              <Link to={dashboardPath} className="mt-4 block text-sm font-semibold text-leaf hover:underline">View dashboard →</Link>
             </motion.section>
           )}
         </aside>

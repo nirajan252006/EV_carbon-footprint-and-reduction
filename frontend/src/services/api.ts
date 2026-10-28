@@ -1,6 +1,7 @@
 import type {
   Activity,
   AccountType,
+  AuthState,
   ChatResponse,
   DashboardData,
   Factor,
@@ -11,9 +12,30 @@ import type {
 } from "../types/api";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+const CSRF_COOKIE = "greentrack_csrf";
+
+class ApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
+function csrfToken(): string | null {
+  const entry = document.cookie
+    .split("; ")
+    .find((cookie) => cookie.startsWith(`${CSRF_COOKIE}=`));
+  return entry ? decodeURIComponent(entry.slice(CSRF_COOKIE.length + 1)) : null;
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, init);
+  const headers = new Headers(init?.headers);
+  const csrf = csrfToken();
+  if (csrf) headers.set("X-CSRF-Token", csrf);
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers,
+    credentials: "same-origin",
+  });
   if (!response.ok) {
     let message = `Request failed (${response.status}).`;
     try {
@@ -22,7 +44,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // Keep the HTTP status when the server response is not JSON.
     }
-    throw new Error(message);
+    throw new ApiError(message, response.status);
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
@@ -37,8 +59,19 @@ function jsonBody(value: unknown): RequestInit {
 }
 
 export const api = {
-  getWorkspace: () => request<Workspace | null>("/api/workspace"),
-  saveWorkspace: (value: { name: string; account_type: AccountType; region: string }) =>
+  getMe: () => request<AuthState>("/api/auth/me"),
+  register: (value: { full_name: string; email: string; password: string; account_type: AccountType }) =>
+    request<AuthState>("/api/auth/register", jsonBody(value)),
+  login: (value: { email: string; password: string }) =>
+    request<AuthState>("/api/auth/login", jsonBody(value)),
+  logout: () => request<void>("/api/auth/logout", jsonBody({})),
+  saveWorkspace: (value: {
+    name: string;
+    account_type: AccountType;
+    region: string;
+    profile_name: string;
+    profile_detail: string;
+  }) =>
     request<Workspace>("/api/workspace", {
       ...jsonBody(value),
       method: "PUT",
@@ -89,8 +122,11 @@ export const api = {
   report: async (period: string): Promise<Blob> => {
     const response = await fetch(
       `${API_BASE}/api/reports.csv?period=${encodeURIComponent(period)}`,
+      { credentials: "same-origin" },
     );
     if (!response.ok) throw new Error(`Report request failed (${response.status}).`);
     return response.blob();
   },
+  isUnauthorized: (error: unknown) =>
+    error instanceof ApiError && error.status === 401,
 };

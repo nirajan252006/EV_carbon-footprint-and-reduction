@@ -4,28 +4,42 @@ import {
   ChartNoAxesCombined,
   FileStack,
   Leaf,
+  LogOut,
   Menu,
   Plus,
-  Settings2,
   X,
 } from "lucide-react";
 import { useState } from "react";
-import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { ErrorState } from "../components/Feedback";
 import { useWorkspace } from "../hooks/WorkspaceContext";
 
 const navItems = [
-  { to: "/dashboard", label: "Dashboard", icon: ChartNoAxesCombined },
-  { to: "/activity", label: "Activity log", icon: Plus },
-  { to: "/factors", label: "Emission factors", icon: FileStack },
-  { to: "/assistant", label: "Knowledge assistant", icon: BookOpenText },
+  { path: "dashboard", label: "Dashboard", icon: ChartNoAxesCombined },
+  { path: "activity", label: "Activity log", icon: Plus },
+  { path: "factors", label: "Emission factors", icon: FileStack },
+  { path: "assistant", label: "Knowledge assistant", icon: BookOpenText },
 ];
 
 export function AppLayout() {
-  const { workspace } = useWorkspace();
+  const { auth, workspace, logout } = useWorkspace();
   const location = useLocation();
+  const navigate = useNavigate();
   const reduceMotion = useReducedMotion();
   const [menuOpen, setMenuOpen] = useState(false);
-  const activeLabel = navItems.find((item) => location.pathname.startsWith(item.to))?.label ?? "Dashboard";
+  const [logoutError, setLogoutError] = useState<string | null>(null);
+  const accountType = auth?.user.account_type ?? "individual";
+  const activeLabel = navItems.find((item) => location.pathname.endsWith(`/${item.path}`))?.label ?? "Dashboard";
+
+  async function signOut() {
+    setLogoutError(null);
+    try {
+      await logout();
+      navigate("/", { replace: true });
+    } catch (reason) {
+      setLogoutError(reason instanceof Error ? reason.message : "Sign out failed.");
+    }
+  }
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -33,10 +47,10 @@ export function AppLayout() {
         <Brand />
         <p className="mb-3 mt-14 px-3 text-[10px] font-bold tracking-[0.18em] text-emerald-200/50">WORKSPACE</p>
         <nav className="grid gap-1" aria-label="Main navigation">
-          {navItems.map(({ to, label, icon: Icon }) => (
+          {navItems.map(({ path, label, icon: Icon }) => (
             <NavLink
-              key={to}
-              to={to}
+              key={path}
+              to={`/${accountType}/${path}`}
               className={({ isActive }) =>
                 `flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition ${
                   isActive ? "bg-white/10 font-medium text-white" : "text-emerald-100/65 hover:bg-white/5 hover:text-white"
@@ -67,19 +81,24 @@ export function AppLayout() {
             </button>
             <p className="text-xs text-slate-400">Workspace <span className="mx-2">/</span><strong className="font-medium text-slate-600">{activeLabel}</strong></p>
           </div>
-          <Link to="/onboarding" className="flex items-center gap-2 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 sm:px-3">
+          <div className="flex items-center gap-2">
             <span className="grid h-7 w-7 place-items-center rounded-lg bg-mint text-[10px] font-bold text-leaf">
               {workspace?.name.slice(0, 2).toUpperCase() ?? "GT"}
             </span>
-            <span className="hidden max-w-40 truncate sm:inline">{workspace?.name ?? "Workspace"}</span>
-            <Settings2 className="h-3.5 w-3.5 text-slate-400" />
-          </Link>
+            <span className="hidden max-w-40 truncate sm:inline">
+              <span className="block text-xs font-medium text-slate-700">{workspace?.name ?? "Workspace"}</span>
+              <span className="block text-[10px] text-slate-400">{auth?.user.role} · {auth?.user.email}</span>
+            </span>
+            <button type="button" onClick={() => void signOut()} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-forest" aria-label="Sign out">
+              <LogOut className="h-4 w-4" aria-hidden="true" /><span className="hidden sm:inline">Sign out</span>
+            </button>
+          </div>
         </header>
 
         {menuOpen && (
           <nav className="absolute z-20 grid w-full gap-1 border-b border-slate-200 bg-white p-3 shadow-lg lg:hidden" aria-label="Mobile navigation">
-            {navItems.map(({ to, label, icon: Icon }) => (
-              <NavLink key={to} to={to} onClick={() => setMenuOpen(false)} className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-slate-600 hover:bg-mint">
+            {navItems.map(({ path, label, icon: Icon }) => (
+              <NavLink key={path} to={`/${accountType}/${path}`} onClick={() => setMenuOpen(false)} className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-slate-600 hover:bg-mint">
                 <Icon className="h-4 w-4" />{label}
               </NavLink>
             ))}
@@ -87,6 +106,7 @@ export function AppLayout() {
         )}
 
         <main className="mx-auto max-w-[1500px] px-4 py-7 sm:px-7 lg:px-9">
+          {logoutError && <div className="mb-4"><ErrorState message={logoutError} /></div>}
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={location.pathname}
@@ -110,7 +130,7 @@ export function AppLayout() {
 
 function Brand() {
   return (
-    <Link to="/dashboard" className="flex items-center gap-3 text-white">
+    <Link to="/" className="flex items-center gap-3 text-white">
       <span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-200 font-bold text-forest">G</span>
       <span className="text-sm font-bold tracking-tight">GreenTrack<span className="mt-0.5 block text-[8px] font-semibold tracking-[0.16em] text-emerald-100/50">CARBON INTELLIGENCE</span></span>
     </Link>

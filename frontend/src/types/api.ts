@@ -7,6 +7,27 @@ export interface Workspace {
   account_type: AccountType;
   region: string;
   monthly_target_kg: number | null;
+  onboarding_complete: boolean;
+  profile: {
+    institution_name?: string;
+    organization_name?: string;
+    department?: string;
+    sector?: string;
+  } | null;
+}
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  full_name: string;
+  account_type: AccountType;
+  role: "owner" | "admin" | "member";
+}
+
+export interface AuthState {
+  user: AuthUser;
+  workspace: Workspace;
+  onboarding_complete: boolean;
 }
 
 export interface Factor {

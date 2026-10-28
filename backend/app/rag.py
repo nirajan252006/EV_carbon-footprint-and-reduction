@@ -163,7 +163,8 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
 
 
 class RagService:
-    def __init__(self, provider: AIProvider | None = None) -> None:
+    def __init__(self, workspace_id: str, provider: AIProvider | None = None) -> None:
+        self.workspace_id = workspace_id
         self.provider = provider or OpenAIProvider()
 
     def _embed(self, texts: list[str]) -> list[list[float]]:
@@ -178,8 +179,11 @@ class RagService:
         content: bytes,
         source_url: str | None = None,
     ) -> dict[str, object]:
-        sha256 = hashlib.sha256(content).hexdigest()
-        existing = database.get_document_by_hash(sha256)
+        digest = hashlib.sha256(content).hexdigest()
+        sha256 = hashlib.sha256(
+            self.workspace_id.encode("utf-8") + b"\0" + digest.encode("ascii")
+        ).hexdigest()
+        existing = database.get_document_by_hash(self.workspace_id, sha256)
         if existing:
             return {**existing, "duplicate": True}
 
@@ -193,9 +197,11 @@ class RagService:
 
         document_id = str(uuid.uuid4())
         try:
-            database.save_document(document_id, filename, sha256, source_url, chunks)
+            database.save_document(
+                self.workspace_id, document_id, filename, sha256, source_url, chunks
+            )
         except sqlite3.IntegrityError:
-            existing = database.get_document_by_hash(sha256)
+            existing = database.get_document_by_hash(self.workspace_id, sha256)
             if existing:
                 return {**existing, "duplicate": True}
             raise
@@ -213,7 +219,7 @@ class RagService:
         query_vector = query_vectors[0]
         scored = [
             {**chunk, "score": cosine_similarity(query_vector, chunk["embedding"])}
-            for chunk in database.search_chunks(query_vector)
+            for chunk in database.search_chunks(self.workspace_id, query_vector)
         ]
         matches = sorted(scored, key=lambda item: float(item["score"]), reverse=True)
         matches = [

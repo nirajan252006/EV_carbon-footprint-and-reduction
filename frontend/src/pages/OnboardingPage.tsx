@@ -1,40 +1,52 @@
-import { motion } from "framer-motion";
 import { ArrowRight, Building2, Leaf, School, UserRound } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, Navigate, useNavigate } from "react-router-dom";
 import { ErrorState } from "../components/Feedback";
 import { useWorkspace } from "../hooks/WorkspaceContext";
 import { api } from "../services/api";
-import type { AccountType } from "../types/api";
 
-const accountTypes: Array<{
-  value: AccountType;
-  title: string;
-  description: string;
-  icon: typeof UserRound;
-}> = [
-  { value: "individual", title: "Individual", description: "Personal footprint and progress", icon: UserRound },
-  { value: "college", title: "College", description: "Campus, facility, or department activity", icon: School },
-  { value: "organization", title: "Organization", description: "Facility and team reporting", icon: Building2 },
-];
+const accountLabels = {
+  individual: "Individual",
+  college: "College",
+  organization: "Organization",
+} as const;
 
 export function OnboardingPage() {
-  const { workspace, setWorkspace } = useWorkspace();
+  const { auth, workspace, setWorkspace } = useWorkspace();
   const navigate = useNavigate();
-  const [accountType, setAccountType] = useState<AccountType>(workspace?.account_type ?? "individual");
+  const accountType = auth?.user.account_type;
   const [name, setName] = useState(workspace?.name ?? "");
-  const [region, setRegion] = useState(workspace?.region ?? "India");
+  const [region, setRegion] = useState(workspace?.region ?? "");
+  const [profileName, setProfileName] = useState(
+    workspace?.profile?.institution_name ?? workspace?.profile?.organization_name ?? workspace?.name ?? "",
+  );
+  const [profileDetail, setProfileDetail] = useState(
+    workspace?.profile?.department ?? workspace?.profile?.sector ?? "",
+  );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  if (!auth || !accountType) return <Navigate to="/" replace />;
+  if (auth.onboarding_complete) return <Navigate to={`/${accountType}/dashboard`} replace />;
+
+  const ProfileIcon = accountType === "individual" ? UserRound : accountType === "college" ? School : Building2;
+  const profileLabel = accountType === "college" ? "Institution name" : accountType === "organization" ? "Organization name" : "Personal workspace";
+  const detailLabel = accountType === "college" ? "Department or campus unit" : "Industry or sector";
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setSaving(true);
     try {
-      const saved = await api.saveWorkspace({ name: name.trim(), account_type: accountType, region: region.trim() });
+      const saved = await api.saveWorkspace({
+        name: name.trim(),
+        account_type: accountType,
+        region: region.trim(),
+        profile_name: profileName.trim(),
+        profile_detail: profileDetail.trim(),
+      });
       setWorkspace(saved);
-      navigate("/dashboard");
+      navigate(`/${accountType}/dashboard`, { replace: true });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Workspace could not be saved.");
     } finally {
@@ -44,68 +56,50 @@ export function OnboardingPage() {
 
   return (
     <div className="min-h-screen bg-canvas">
-      <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-7 sm:px-8">
-        <Link to="/dashboard" className="flex items-center gap-3 text-forest">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-200 font-bold">G</span>
+      <header className="mx-auto flex max-w-6xl items-center justify-between px-5 py-6 sm:px-8">
+        <Link to="/" className="flex items-center gap-3 text-forest">
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-200"><Leaf className="h-5 w-5" aria-hidden="true" /></span>
           <span className="text-sm font-bold">GreenTrack<span className="mt-0.5 block text-[8px] tracking-[0.16em] text-slate-400">CARBON INTELLIGENCE</span></span>
         </Link>
-        {workspace && <Link className="text-sm font-medium text-leaf hover:underline" to="/dashboard">Back to dashboard</Link>}
+        <span className="rounded-full bg-mint px-3 py-1.5 text-xs font-semibold text-leaf">{accountLabels[accountType]} account</span>
       </header>
-      <main className="mx-auto max-w-5xl px-5 pb-12 pt-10 sm:px-8 sm:pt-16">
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
-          <p className="mb-3 flex items-center gap-2 text-[10px] font-bold tracking-[0.18em] text-leaf"><Leaf className="h-4 w-4" /> GET STARTED</p>
-          <h1 className="max-w-3xl text-4xl font-semibold leading-tight tracking-[-0.05em] text-forest sm:text-6xl">
-            Measure what matters.<br /><span className="text-leaf">Change what’s possible.</span>
-          </h1>
-          <p className="mt-5 max-w-2xl text-sm leading-6 text-slate-500">
-            Choose a workspace type to shape your GreenTrack experience. Record real activity and use documented emission factors.
+      <main className="mx-auto max-w-3xl px-5 pb-12 pt-5 sm:px-8 sm:pt-10">
+        <p className="mb-3 flex items-center gap-2 text-[10px] font-bold tracking-[0.18em] text-leaf"><ProfileIcon className="h-4 w-4" aria-hidden="true" /> WORKSPACE SETUP</p>
+        <h1 className="text-3xl font-semibold tracking-[-0.05em] text-forest sm:text-5xl">
+          Set up your {accountLabels[accountType].toLowerCase()} portal.
+        </h1>
+        <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-500">
+          Your data is isolated to authorized workspace members. Add the location and profile context you want attached to reports.
+        </p>
+
+        <form onSubmit={submit} className="surface-card mt-7 grid gap-5 p-5 sm:p-8">
+          <label className="form-label">
+            Workspace name
+            <input value={name} onChange={(event) => setName(event.target.value)} minLength={2} maxLength={120} required className="form-input" placeholder="A name for this workspace" />
+          </label>
+          <label className="form-label">
+            {profileLabel}
+            <input value={profileName} onChange={(event) => setProfileName(event.target.value)} minLength={2} maxLength={160} required className="form-input" />
+          </label>
+          {accountType !== "individual" && (
+            <label className="form-label">
+              {detailLabel} <span className="font-normal text-slate-400">(optional)</span>
+              <input value={profileDetail} onChange={(event) => setProfileDetail(event.target.value)} maxLength={160} className="form-input" placeholder={accountType === "college" ? "e.g. Main campus" : "e.g. Education"} />
+            </label>
+          )}
+          <label className="form-label">
+            Reporting region
+            <input value={region} onChange={(event) => setRegion(event.target.value)} minLength={2} maxLength={120} required className="form-input" placeholder="Country, state, or reporting region" />
+          </label>
+          <p className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-3 text-xs leading-5 text-slate-600">
+            GreenTrack does not preload emission factors. Add a factor only after verifying its source, region, year, and unit.
           </p>
-        </motion.div>
-
-        <form onSubmit={submit} className="mt-9 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_12px_42px_#183a260c] sm:p-8">
-          <fieldset>
-            <legend className="mb-4 text-sm font-semibold text-slate-700">Choose an account type</legend>
-            <div className="grid gap-3 md:grid-cols-3">
-              {accountTypes.map(({ value, title, description, icon: Icon }, index) => (
-                <motion.label
-                  key={value}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.06, duration: 0.2 }}
-                  className={`group flex min-h-32 cursor-pointer flex-col rounded-xl border p-4 transition ${
-                    accountType === value ? "border-leaf bg-emerald-50/70 ring-2 ring-emerald-100" : "border-slate-200 hover:border-emerald-300 hover:bg-slate-50"
-                  }`}
-                >
-                  <input className="sr-only" type="radio" name="account_type" value={value} checked={accountType === value} onChange={() => setAccountType(value)} />
-                  <span className={`grid h-9 w-9 place-items-center rounded-xl ${accountType === value ? "bg-emerald-100 text-leaf" : "bg-slate-100 text-slate-500"}`}>
-                    <Icon className="h-4 w-4" aria-hidden="true" />
-                  </span>
-                  <strong className="mt-3 text-sm text-slate-800">{title}</strong>
-                  <span className="mt-1 text-xs text-slate-500">{description}</span>
-                </motion.label>
-              ))}
-            </div>
-          </fieldset>
-
-          <div className="mt-6 grid gap-4 sm:grid-cols-2">
-            <label className="grid gap-2 text-xs font-medium text-slate-600">
-              Workspace name
-              <input value={name} onChange={(event) => setName(event.target.value)} minLength={2} maxLength={120} required placeholder="e.g. GreenTrack home" className="form-input" />
-            </label>
-            <label className="grid gap-2 text-xs font-medium text-slate-600">
-              Region
-              <input value={region} onChange={(event) => setRegion(event.target.value)} minLength={2} maxLength={120} required placeholder="Country or state" className="form-input" />
-            </label>
-          </div>
-          <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
-            <p className="max-w-xl text-xs leading-5 text-slate-400">
-              Prototype note: this creates a local workspace profile, not a sign-in. Authentication and multi-user access controls are not implemented.
-            </p>
+          {error && <div role="alert"><ErrorState message={error} /></div>}
+          <div className="flex flex-wrap items-center justify-end gap-3">
             <button type="submit" disabled={saving} className="btn-primary">
-              {saving ? "Saving…" : workspace ? "Save workspace" : "Create workspace"} <ArrowRight className="h-4 w-4" />
+              {saving ? "Saving…" : "Finish setup"} <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
-          {error && <div className="mt-4"><ErrorState message={error} /></div>}
         </form>
       </main>
     </div>

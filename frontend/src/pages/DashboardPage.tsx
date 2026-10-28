@@ -27,6 +27,7 @@ import {
 } from "recharts";
 import { EmptyState, ErrorState, LoadingState } from "../components/Feedback";
 import { PageHeader } from "../components/PageHeader";
+import { useWorkspace } from "../hooks/WorkspaceContext";
 import { api } from "../services/api";
 import type { Activity, DashboardData, Recommendation } from "../types/api";
 
@@ -52,6 +53,9 @@ function monthLabel(value: string) {
 }
 
 export function DashboardPage() {
+  const { auth } = useWorkspace();
+  const accountType = auth?.user.account_type ?? "individual";
+  const portalName = accountType === "college" ? "Campus" : accountType === "organization" ? "Organization" : "Personal";
   const [period, setPeriod] = useState(currentPeriod);
   const [data, setData] = useState<DashboardData | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -142,12 +146,16 @@ export function DashboardPage() {
   return (
     <div>
       <PageHeader
-        eyebrow="CARBON FOOTPRINT OVERVIEW"
-        title="Make your impact"
-        highlight="visible and actionable."
-        description="Track measured activity and documented emissions factors. No default factor is silently assumed."
+        eyebrow={`${portalName.toUpperCase()} CARBON FOOTPRINT`}
+        title={accountType === "individual" ? "Make your impact" : `Your ${portalName.toLowerCase()} emissions`}
+        highlight={accountType === "individual" ? "visible and actionable." : "measured and traceable."}
+        description={accountType === "college"
+          ? "Review persisted campus activity, document factor sources, and monitor reporting trends."
+          : accountType === "organization"
+            ? "Review your organization's persisted activity, source-backed calculations, and reporting trends."
+            : "Track measured personal activity and documented emissions factors. No default factor is silently assumed."}
         action={
-          <Link to="/activity" className="btn-primary">
+          <Link to={`/${accountType}/activity`} className="btn-primary">
             <Plus className="h-4 w-4" /> Add activity
           </Link>
         }
@@ -181,7 +189,7 @@ export function DashboardPage() {
             <p className="text-sm font-semibold text-amber-900">Start with a sourced emission factor</p>
             <p className="mt-1 text-xs text-amber-800">Activity is not estimated until a category and unit-matched factor is available.</p>
           </div>
-          <Link to="/factors" className="btn-secondary border-amber-300 bg-white">Configure factors <ArrowUpRight className="h-4 w-4" /></Link>
+          <Link to={`/${accountType}/factors`} className="btn-secondary border-amber-300 bg-white">Configure factors <ArrowUpRight className="h-4 w-4" /></Link>
         </div>
       )}
 

@@ -2,8 +2,11 @@ import logging
 import csv
 import io
 import math
+import re
+import secrets
+import sqlite3
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -17,8 +20,17 @@ from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 from . import database
+from .auth import hash_password, hash_token, new_session_token, verify_password
 from .carbon import calculate_emissions_kg
-from .config import MAX_UPLOAD_BYTES, OPENAI_API_KEY, ROOT_DIR
+from .config import (
+    COOKIE_SECURE,
+    CSRF_COOKIE_NAME,
+    MAX_UPLOAD_BYTES,
+    OPENAI_API_KEY,
+    ROOT_DIR,
+    SESSION_COOKIE_NAME,
+    SESSION_TTL_SECONDS,
+)
 from .rag import ProviderError, ProviderUnavailable, RagService, is_provider_error
 
 logging.basicConfig(level=logging.INFO)
@@ -32,6 +44,112 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="GreenTrack Carbon Platform", lifespan=lifespan)
+
+PUBLIC_API = {
+    ("GET", "/api/health"),
+    ("POST", "/api/auth/register"),
+    ("POST", "/api/auth/login"),
+}
+UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+@app.middleware("http")
+async def authenticate_api_requests(request: Request, call_next):
+    if not request.url.path.startswith("/api/"):
+        return await call_next(request)
+
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    session = None
+    if token:
+        session = database.get_session(hash_token(token), _utc_now().strftime("%Y-%m-%dT%H:%M:%SZ"))
+        if session:
+            request.state.principal = session
+
+    if (request.method, request.url.path) in PUBLIC_API:
+        return await call_next(request)
+
+    if not session:
+        return JSONResponse(status_code=401, content={"detail": "Sign in to continue."})
+
+    if request.method in UNSAFE_METHODS:
+        csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME, "")
+        csrf_header = request.headers.get("X-CSRF-Token", "")
+        if (
+            not csrf_cookie
+            or not csrf_header
+            or not secrets.compare_digest(csrf_cookie, csrf_header)
+            or not secrets.compare_digest(hash_token(csrf_cookie), session["csrf_hash"])
+        ):
+            return JSONResponse(status_code=403, content={"detail": "CSRF token is missing or invalid."})
+
+    return await call_next(request)
+
+
+def current_principal(request: Request) -> dict[str, object]:
+    principal = getattr(request.state, "principal", None)
+    if not principal:
+        raise HTTPException(status_code=401, detail="Sign in to continue.")
+    return principal
+
+
+def require_admin(request: Request) -> dict[str, object]:
+    principal = current_principal(request)
+    if principal["role"] not in {"owner", "admin"}:
+        raise HTTPException(status_code=403, detail="Workspace administrator permission is required.")
+    return principal
+
+
+def require_onboarding(principal: dict[str, object]) -> str:
+    if not principal["onboarding_complete"]:
+        raise HTTPException(status_code=409, detail="Complete onboarding before using this feature.")
+    return str(principal["workspace_id"])
+
+
+def create_authenticated_session(
+    response: Response, user_id: str
+) -> tuple[str, str]:
+    session_token = new_session_token()
+    csrf_token = new_session_token()
+    expiry = (_utc_now() + timedelta(seconds=SESSION_TTL_SECONDS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    database.create_session(
+        hash_token(session_token), hash_token(csrf_token), user_id, expiry
+    )
+    cookie_options = {
+        "httponly": True,
+        "secure": COOKIE_SECURE,
+        "samesite": "strict",
+        "path": "/",
+        "max_age": SESSION_TTL_SECONDS,
+    }
+    response.set_cookie(SESSION_COOKIE_NAME, session_token, **cookie_options)
+    response.set_cookie(
+        CSRF_COOKIE_NAME,
+        csrf_token,
+        httponly=False,
+        secure=COOKIE_SECURE,
+        samesite="strict",
+        path="/",
+        max_age=SESSION_TTL_SECONDS,
+    )
+    return session_token, csrf_token
+
+
+def auth_payload(principal: dict[str, object]) -> dict[str, object]:
+    return {
+        "user": {
+            "id": principal["user_id"],
+            "email": principal["email"],
+            "full_name": principal["full_name"],
+            "account_type": principal["account_type"],
+            "role": principal["role"],
+        },
+        "workspace": database.get_workspace(str(principal["workspace_id"])),
+        "onboarding_complete": bool(principal["onboarding_complete"]),
+    }
 
 
 def _json_safe(value: object) -> object:
@@ -58,10 +176,52 @@ class ChatRequest(BaseModel):
     question: str = Field(min_length=3, max_length=2000)
 
 
+class RegisterRequest(BaseModel):
+    full_name: str = Field(min_length=2, max_length=120)
+    email: str = Field(min_length=5, max_length=254)
+    password: str = Field(min_length=12, max_length=128)
+    account_type: str
+
+    @field_validator("email")
+    @classmethod
+    def valid_email(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", normalized):
+            raise ValueError("Enter a valid email address.")
+        return normalized
+
+    @field_validator("full_name")
+    @classmethod
+    def nonempty_name(cls, value: str) -> str:
+        cleaned = value.strip()
+        if len(cleaned) < 2:
+            raise ValueError("Name must contain at least 2 non-space characters.")
+        return cleaned
+
+    @field_validator("account_type")
+    @classmethod
+    def valid_account_type(cls, value: str) -> str:
+        if value not in {"individual", "college", "organization"}:
+            raise ValueError("Choose individual, college, or organization.")
+        return value
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(min_length=5, max_length=254)
+    password: str = Field(min_length=1, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def normalized_email(cls, value: str) -> str:
+        return value.strip().lower()
+
+
 class WorkspaceRequest(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     account_type: str
     region: str = Field(min_length=2, max_length=120)
+    profile_name: str = Field(default="", max_length=160)
+    profile_detail: str = Field(default="", max_length=160)
 
     @field_validator("account_type")
     @classmethod
@@ -133,45 +293,128 @@ class TargetRequest(BaseModel):
     monthly_target_kg: float | None = Field(default=None, gt=0, le=1_000_000_000)
 
 
-def service() -> RagService:
+@app.post("/api/auth/register", status_code=201)
+def register(request: RegisterRequest, response: Response) -> dict[str, object]:
     try:
-        return RagService()
+        user = database.create_account(
+            request.email,
+            request.full_name,
+            request.account_type,
+            hash_password(request.password),
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except Exception as error:
+        if isinstance(error, sqlite3.IntegrityError):
+            raise HTTPException(
+                status_code=409,
+                detail="An account with this email already exists.",
+            ) from error
+        raise
+    session_token, _ = create_authenticated_session(response, str(user["id"]))
+    session = database.get_session(
+        hash_token(session_token), _utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
+    )
+    if not session:
+        raise HTTPException(status_code=500, detail="The account session could not be created.")
+    return auth_payload(session)
+
+
+@app.post("/api/auth/login")
+def login(request: LoginRequest, response: Response) -> dict[str, object]:
+    user = database.get_user_by_email(request.email)
+    if not user or not verify_password(request.password, str(user["password_hash"])):
+        raise HTTPException(status_code=401, detail="Email or password is incorrect.")
+    session_token, _ = create_authenticated_session(response, str(user["id"]))
+    session = database.get_session(
+        hash_token(session_token), _utc_now().strftime("%Y-%m-%dT%H:%M:%SZ")
+    )
+    if not session:
+        raise HTTPException(status_code=500, detail="The login session could not be created.")
+    return auth_payload(session)
+
+
+@app.get("/api/auth/me")
+def authenticated_user(request: Request) -> dict[str, object]:
+    return auth_payload(current_principal(request))
+
+
+@app.post("/api/auth/logout", status_code=204)
+def logout(request: Request, response: Response) -> Response:
+    current_principal(request)
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if token:
+        database.delete_session(hash_token(token))
+    response.delete_cookie(
+        SESSION_COOKIE_NAME, path="/", secure=COOKIE_SECURE, httponly=True, samesite="strict"
+    )
+    response.delete_cookie(
+        CSRF_COOKIE_NAME, path="/", secure=COOKIE_SECURE, httponly=False, samesite="strict"
+    )
+    response.status_code = 204
+    return response
+
+
+def service(workspace_id: str) -> RagService:
+    try:
+        return RagService(workspace_id)
     except ProviderUnavailable as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
 
 
 @app.get("/api/health")
-def health() -> dict[str, object]:
+def health(request: Request) -> dict[str, object]:
+    principal = getattr(request.state, "principal", None)
+    workspace_id = str(principal["workspace_id"]) if principal else None
     return {
         "status": "ok",
         "ai_provider_configured": bool(OPENAI_API_KEY),
-        "indexed_documents": database.count_documents(),
-        "workspace_configured": database.get_workspace() is not None,
+        "indexed_documents": database.count_documents(workspace_id) if workspace_id else 0,
+        "workspace_configured": bool(principal and principal["onboarding_complete"]),
     }
 
 
 @app.get("/api/workspace")
-def workspace() -> dict[str, object] | None:
-    return database.get_workspace()
+def workspace(request: Request) -> dict[str, object] | None:
+    principal = current_principal(request)
+    return database.get_workspace(str(principal["workspace_id"]))
 
 
 @app.put("/api/workspace")
-def configure_workspace(request: WorkspaceRequest) -> dict[str, object]:
-    return database.save_workspace(request.name.strip(), request.account_type, request.region.strip())
+def configure_workspace(request: WorkspaceRequest, http_request: Request) -> dict[str, object]:
+    principal = require_admin(http_request)
+    if request.account_type != principal["account_type"]:
+        raise HTTPException(status_code=403, detail="Account type cannot be changed.")
+    workspace = database.save_workspace(
+        str(principal["workspace_id"]),
+        request.name.strip(),
+        request.account_type,
+        request.region.strip(),
+        (request.profile_name or request.name).strip(),
+        request.profile_detail.strip(),
+    )
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found.")
+    return workspace
 
 
 @app.get("/api/factors")
-def factors(category: str | None = Query(default=None)) -> list[dict[str, object]]:
+def factors(
+    request: Request, category: str | None = Query(default=None)
+) -> list[dict[str, object]]:
+    principal = current_principal(request)
+    workspace_id = require_onboarding(principal)
     if category and category not in {"electricity", "transport", "fuel", "waste"}:
         raise HTTPException(status_code=422, detail="Invalid emissions category.")
-    return database.list_factors(category)
+    return database.list_factors(workspace_id, category)
 
 
 @app.post("/api/factors", status_code=201)
-def add_factor(request: FactorRequest) -> dict[str, object]:
-    if not database.get_workspace():
-        raise HTTPException(status_code=409, detail="Set up a workspace before adding factors.")
+def add_factor(request: FactorRequest, http_request: Request) -> dict[str, object]:
+    principal = require_admin(http_request)
+    workspace_id = require_onboarding(principal)
     return database.save_factor(
+        workspace_id,
         request.category,
         request.name.strip(),
         request.value,
@@ -185,15 +428,19 @@ def add_factor(request: FactorRequest) -> dict[str, object]:
 
 
 @app.get("/api/activities")
-def activities(period: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$")) -> list[dict[str, object]]:
-    return database.list_activities(period)
+def activities(
+    request: Request,
+    period: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+) -> list[dict[str, object]]:
+    workspace_id = require_onboarding(current_principal(request))
+    return database.list_activities(workspace_id, period)
 
 
 @app.post("/api/activities", status_code=201)
-def add_activity(request: ActivityRequest) -> dict[str, object]:
-    if not database.get_workspace():
-        raise HTTPException(status_code=409, detail="Set up a workspace before recording activity.")
-    factor = database.get_factor(request.factor_id)
+def add_activity(request: ActivityRequest, http_request: Request) -> dict[str, object]:
+    principal = current_principal(http_request)
+    workspace_id = require_onboarding(principal)
+    factor = database.get_factor(request.factor_id, workspace_id)
     if not factor:
         raise HTTPException(status_code=404, detail="Emission factor not found.")
     try:
@@ -203,6 +450,7 @@ def add_activity(request: ActivityRequest) -> dict[str, object]:
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     return database.save_activity(
+        workspace_id,
         request.category,
         request.description.strip(),
         request.quantity,
@@ -215,28 +463,37 @@ def add_activity(request: ActivityRequest) -> dict[str, object]:
 
 
 @app.delete("/api/activities/{activity_id}", status_code=204)
-def remove_activity(activity_id: str) -> None:
-    if not database.delete_activity(activity_id):
+def remove_activity(activity_id: str, request: Request) -> None:
+    workspace_id = require_onboarding(current_principal(request))
+    if not database.delete_activity(activity_id, workspace_id):
         raise HTTPException(status_code=404, detail="Activity record not found.")
 
 
 @app.get("/api/dashboard")
-def dashboard(period: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$")) -> dict[str, object]:
+def dashboard(
+    request: Request,
+    period: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+) -> dict[str, object]:
     selected_period = period or datetime.now().strftime("%Y-%m")
-    return database.get_dashboard(selected_period)
+    workspace_id = require_onboarding(current_principal(request))
+    return database.get_dashboard(workspace_id, selected_period)
 
 
 @app.put("/api/targets")
-def update_target(request: TargetRequest) -> dict[str, float | None]:
-    if not database.get_workspace():
-        raise HTTPException(status_code=409, detail="Set up a workspace before setting a target.")
-    database.set_monthly_target(request.monthly_target_kg)
+def update_target(request: TargetRequest, http_request: Request) -> dict[str, float | None]:
+    principal = require_admin(http_request)
+    workspace_id = require_onboarding(principal)
+    database.set_monthly_target(workspace_id, request.monthly_target_kg)
     return {"monthly_target_kg": request.monthly_target_kg}
 
 
 @app.get("/api/recommendations")
-def recommendations(period: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$")) -> list[dict[str, object]]:
-    data = database.get_dashboard(period or datetime.now().strftime("%Y-%m"))
+def recommendations(
+    request: Request,
+    period: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+) -> list[dict[str, object]]:
+    workspace_id = require_onboarding(current_principal(request))
+    data = database.get_dashboard(workspace_id, period or datetime.now().strftime("%Y-%m"))
     suggestions = {
         "electricity": "Review high-load equipment schedules and prioritize efficiency improvements.",
         "transport": "Review frequent trips and consider shared, public, or lower-emission travel options.",
@@ -256,11 +513,15 @@ def recommendations(period: str | None = Query(default=None, pattern=r"^\d{4}-(0
 
 
 @app.get("/api/reports.csv")
-def report_csv(period: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$")) -> StreamingResponse:
+def report_csv(
+    request: Request,
+    period: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+) -> StreamingResponse:
     selected_period = period or datetime.now().strftime("%Y-%m")
+    workspace_id = require_onboarding(current_principal(request))
     output = io.StringIO(newline="")
     writer = csv.writer(output)
-    workspace = database.get_workspace()
+    workspace = database.get_workspace(workspace_id)
     if workspace:
         writer.writerow(["Workspace", _safe_csv_text(workspace["name"])])
         writer.writerow(["Account type", workspace["account_type"]])
@@ -272,7 +533,7 @@ def report_csv(period: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]
         "Emissions (kg CO2e)", "Factor name", "Factor value", "Factor unit", "Factor year",
         "Factor region", "Factor source", "Factor source URL", "Assumptions",
     ])
-    for row in database.list_activities(selected_period):
+    for row in database.list_activities(workspace_id, selected_period):
         writer.writerow([
             row["period"], row["category"], _safe_csv_text(row["description"]),
             _safe_csv_text(row["reporting_unit"]),
@@ -297,15 +558,20 @@ def _safe_csv_text(value: object) -> str:
 
 
 @app.get("/api/documents")
-def documents() -> list[dict[str, object]]:
-    return database.list_documents()
+def documents(request: Request) -> list[dict[str, object]]:
+    principal = current_principal(request)
+    workspace_id = require_onboarding(principal)
+    return database.list_documents(workspace_id)
 
 
 @app.post("/api/documents", status_code=201)
 async def upload_document(
+    request: Request,
     file: UploadFile = File(...),
     source_url: str | None = Form(default=None, max_length=2000),
 ) -> dict[str, object]:
+    principal = require_admin(request)
+    workspace_id = require_onboarding(principal)
     if not file.filename:
         raise HTTPException(status_code=400, detail="A filename is required.")
     if Path(file.filename).suffix.lower() not in {".pdf", ".txt", ".md"}:
@@ -321,7 +587,7 @@ async def upload_document(
         if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
             raise HTTPException(status_code=400, detail="Source URL must use HTTP or HTTPS.")
 
-    rag = service()
+    rag = service(workspace_id)
     try:
         return await run_in_threadpool(rag.ingest, file.filename, content, source_url)
     except ValueError as error:
@@ -337,9 +603,11 @@ async def upload_document(
 
 
 @app.post("/api/documents/sample", status_code=201)
-def add_sample_document() -> dict[str, object]:
+def add_sample_document(request: Request) -> dict[str, object]:
+    principal = require_admin(request)
+    workspace_id = require_onboarding(principal)
     sample_path = Path(__file__).resolve().parents[1] / "seed_documents" / "ghg-protocol-corporate-standard.md"
-    rag = service()
+    rag = service(workspace_id)
     try:
         return rag.ingest(
             sample_path.name,
@@ -360,17 +628,21 @@ def add_sample_document() -> dict[str, object]:
 
 
 @app.delete("/api/documents/{document_id}", status_code=204)
-def remove_document(document_id: str) -> None:
-    if not database.delete_document(document_id):
+def remove_document(document_id: str, request: Request) -> None:
+    principal = require_admin(request)
+    workspace_id = require_onboarding(principal)
+    if not database.delete_document(document_id, workspace_id):
         raise HTTPException(status_code=404, detail="Document not found.")
 
 
 @app.post("/api/chat")
-def chat(request: ChatRequest) -> dict[str, object]:
+def chat(request: ChatRequest, http_request: Request) -> dict[str, object]:
+    principal = current_principal(http_request)
+    workspace_id = require_onboarding(principal)
     question = request.question.strip()
     if len(question) < 3:
         raise HTTPException(status_code=422, detail="Question must contain at least 3 non-space characters.")
-    rag = service()
+    rag = service(workspace_id)
     try:
         return rag.chat(question)
     except Exception as error:
