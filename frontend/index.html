@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#102a21" />
+    <title>GreenTrack — Knowledge assistant</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <a class="brand" href="/" aria-label="GreenTrack home">
+          <span class="brand-mark">G</span>
+          <span>GreenTrack<small>CLIMATE INTELLIGENCE</small></span>
+        </a>
+        <div class="nav-label">WORKSPACE</div>
+        <nav aria-label="Main navigation">
+          <a class="nav-item" href="#overview"><span>◫</span> Overview</a>
+          <a class="nav-item" href="#knowledge"><span>▤</span> Knowledge base</a>
+          <a class="nav-item active" href="#assistant"><span>✳</span> AI assistant</a>
+        </nav>
+        <div class="sidebar-bottom">
+          <div class="status-orb"></div>
+          <div><strong>Evidence first</strong><small>Answers cite retrieved sources</small></div>
+        </div>
+      </aside>
+
+      <main>
+        <header class="topbar">
+          <div class="crumb">Workspace <span>/</span> Knowledge assistant</div>
+          <div class="user-chip"><span class="avatar">GT</span><span>GreenTrack demo</span></div>
+        </header>
+
+        <section class="page-heading" id="overview">
+          <div>
+            <div class="eyebrow"><span class="pulse"></span> SUSTAINABILITY KNOWLEDGE</div>
+            <h1>Grounded answers.<br /><em>Traceable evidence.</em></h1>
+            <p>Ask about sustainability methodology and guidance. GreenTrack retrieves relevant passages and cites the source material behind each response.</p>
+          </div>
+          <div class="heading-art" aria-hidden="true">
+            <div class="art-ring ring-one"></div><div class="art-ring ring-two"></div>
+            <div class="leaf">✳</div><div class="art-dot dot-one"></div><div class="art-dot dot-two"></div>
+          </div>
+        </section>
+
+        <section class="status-banner" id="provider-status" aria-live="polite">
+          <span class="status-icon">!</span>
+          <div><strong>Checking AI provider</strong><span>Connecting to the configured embedding and answer services…</span></div>
+          <span class="status-pill">CHECKING</span>
+        </section>
+
+        <div class="content-grid">
+          <section class="panel assistant-panel" id="assistant">
+            <div class="panel-heading">
+              <div><span class="section-icon">✳</span><div><h2>Ask the assistant</h2><p>Answers are limited to retrieved evidence.</p></div></div>
+              <span class="live-badge"><i></i> SOURCE-BOUND</span>
+            </div>
+            <div class="suggestions" id="suggestions">
+              <button type="button" class="suggestion">What does the GHG Protocol Corporate Standard cover?</button>
+              <button type="button" class="suggestion">Which organization types can use the standard?</button>
+            </div>
+            <form id="chat-form" class="chat-form">
+              <label class="sr-only" for="question">Ask a sustainability question</label>
+              <textarea id="question" maxlength="2000" rows="2" placeholder="Ask a question about your indexed sustainability documents…" required></textarea>
+              <button id="send-button" type="submit" class="send-button" aria-label="Send question">↑</button>
+            </form>
+            <div class="form-footer"><span>Responses can be wrong. Check the linked source.</span><span id="char-count">0 / 2000</span></div>
+            <div id="chat-error" class="inline-error" role="alert" hidden></div>
+            <div id="answer-card" class="answer-card" hidden>
+              <div class="answer-label"><span>✳</span> GROUNDED RESPONSE</div>
+              <div id="answer-text" class="answer-text"></div>
+              <div id="sources" class="sources"></div>
+            </div>
+          </section>
+
+          <aside class="panel source-panel" id="knowledge">
+            <div class="panel-heading source-heading">
+              <div><span class="section-icon source-icon">▤</span><div><h2>Knowledge sources</h2><p>Documents available for retrieval</p></div></div>
+              <span id="document-count" class="count-badge">0</span>
+            </div>
+            <div id="document-list" class="document-list"><div class="empty-state">Loading indexed sources…</div></div>
+            <div class="source-actions">
+              <button type="button" id="sample-button" class="button secondary">Add verified sample source</button>
+              <label class="button primary upload-button">Upload document<input id="file-input" type="file" accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown" /></label>
+            </div>
+            <p class="upload-note">PDF, TXT, or Markdown · up to 10 MB. Text is extracted, chunked, embedded, and stored locally.</p>
+          </aside>
+        </div>
+
+        <footer class="footnote"><span>GreenTrack RAG prototype</span><span>Retrieved context informs generation; calculations remain separate.</span></footer>
+      </main>
+    </div>
+    <script src="/assets/app.js" defer></script>
+  </body>
+</html>
