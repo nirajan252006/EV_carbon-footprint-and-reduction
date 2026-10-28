@@ -50,6 +50,7 @@ export interface Activity {
   quantity: number;
   unit: string;
   period: string;
+  activity_date: string | null;
   reporting_unit: string;
   factor_id: string;
   factor_name: string;
@@ -70,6 +71,7 @@ export interface DashboardData {
   previous_total_kg: number;
   activity_count: number;
   categories: Array<{ category: Category; emissions_kg: number }>;
+  daily: Array<{ activity_date: string; emissions_kg: number }>;
   contributors: Array<{
     id: string;
     category: Category;

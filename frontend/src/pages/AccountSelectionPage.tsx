@@ -66,7 +66,7 @@ export function AccountSelectionPage() {
               </Link>
               <Link
                 className="inline-flex min-h-10 items-center justify-center rounded-xl px-3 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-forest"
-                to={`/login?account_type=${type}`}
+                to={`/auth/${type}`}
               >
                 Sign in
               </Link>

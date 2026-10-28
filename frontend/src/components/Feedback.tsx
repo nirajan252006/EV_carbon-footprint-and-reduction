@@ -21,7 +21,7 @@ export function ErrorState({ message }: { message: string }) {
 
 export function SuccessState({ message }: { message: string }) {
   return (
-    <div role="status" className="flex gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+    <div role="status" className="flex gap-2 rounded-lg border border-ice bg-ice p-3 text-sm text-blue-800">
       <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
       <span>{message}</span>
     </div>

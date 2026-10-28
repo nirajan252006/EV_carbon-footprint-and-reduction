@@ -14,12 +14,18 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-do
 import { ErrorState } from "../components/Feedback";
 import { useWorkspace } from "../hooks/WorkspaceContext";
 
-const navItems = [
-  { path: "dashboard", label: "Dashboard", icon: ChartNoAxesCombined },
-  { path: "activity", label: "Activity log", icon: Plus },
-  { path: "factors", label: "Emission factors", icon: FileStack },
-  { path: "assistant", label: "Knowledge assistant", icon: BookOpenText },
-];
+const sharedNav = {
+  dashboard: { path: "dashboard", label: "Dashboard", icon: ChartNoAxesCombined },
+  activity: { path: "activity", label: "Activity log", icon: Plus },
+  factors: { path: "factors", label: "Emission factors", icon: FileStack },
+  assistant: { path: "assistant", label: "Knowledge assistant", icon: BookOpenText },
+};
+
+const navItemsByAccount = {
+  individual: [sharedNav.dashboard, sharedNav.activity, { path: "analytics", label: "My analytics", icon: ChartNoAxesCombined }, { path: "recommendations", label: "Recommendations", icon: Leaf }, { path: "reports", label: "Reports", icon: FileStack }, { path: "profile", label: "My profile", icon: Plus }, sharedNav.assistant],
+  college: [sharedNav.dashboard, { path: "campus", label: "Campus profile", icon: Plus }, { path: "departments", label: "Departments", icon: FileStack }, { path: "activities", label: "Campus activities", icon: Plus }, { path: "analytics", label: "Campus analytics", icon: ChartNoAxesCombined }, { path: "recommendations", label: "Initiatives", icon: Leaf }, { path: "reports", label: "College reports", icon: FileStack }, { path: "settings", label: "Settings", icon: Plus }, sharedNav.assistant],
+  organization: [sharedNav.dashboard, { path: "facilities", label: "Facilities", icon: Plus }, { path: "departments", label: "Departments", icon: FileStack }, { path: "activities", label: "Organization activities", icon: Plus }, { path: "analytics", label: "Analytics", icon: ChartNoAxesCombined }, { path: "recommendations", label: "Recommendations", icon: Leaf }, { path: "reports", label: "Management reports", icon: FileStack }, { path: "settings", label: "Settings", icon: Plus }, sharedNav.assistant],
+};
 
 export function AppLayout() {
   const { auth, workspace, logout } = useWorkspace();
@@ -29,6 +35,7 @@ export function AppLayout() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const accountType = auth?.user.account_type ?? "individual";
+  const navItems = navItemsByAccount[accountType];
   const activeLabel = navItems.find((item) => location.pathname.endsWith(`/${item.path}`))?.label ?? "Dashboard";
 
   async function signOut() {
@@ -43,9 +50,9 @@ export function AppLayout() {
 
   return (
     <div className="min-h-screen bg-canvas">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col bg-forest px-5 py-6 text-white lg:flex">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-200 bg-white px-5 py-6 text-midnight lg:flex">
         <Brand />
-        <p className="mb-3 mt-14 px-3 text-[10px] font-bold tracking-[0.18em] text-emerald-200/50">WORKSPACE</p>
+        <p className="mb-3 mt-14 px-3 text-[10px] font-bold tracking-[0.18em] text-slate-400">WORKSPACE</p>
         <nav className="grid gap-1" aria-label="Main navigation">
           {navItems.map(({ path, label, icon: Icon }) => (
             <NavLink
@@ -53,7 +60,7 @@ export function AppLayout() {
               to={`/${accountType}/${path}`}
               className={({ isActive }) =>
                 `flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition ${
-                  isActive ? "bg-white/10 font-medium text-white" : "text-emerald-100/65 hover:bg-white/5 hover:text-white"
+                  isActive ? "bg-ice font-medium text-leaf shadow-sm" : "text-slate-500 hover:bg-slate-50 hover:text-forest"
                 }`
               }
             >
@@ -62,9 +69,9 @@ export function AppLayout() {
             </NavLink>
           ))}
         </nav>
-        <div className="mt-auto rounded-xl border border-white/10 bg-white/5 p-3">
-          <div className="flex items-center gap-2 text-sm font-medium"><Leaf className="h-4 w-4 text-emerald-300" /> Evidence first</div>
-          <p className="mt-1 text-xs leading-5 text-emerald-100/55">Every calculation keeps its factor source.</p>
+        <div className="mt-auto rounded-xl border border-lavender bg-lavender/35 p-3">
+          <div className="flex items-center gap-2 text-sm font-medium text-forest"><Leaf className="h-4 w-4 text-violet" /> Evidence first</div>
+          <p className="mt-1 text-xs leading-5 text-slate-500">Every calculation keeps its factor source.</p>
         </div>
       </aside>
 
@@ -87,7 +94,7 @@ export function AppLayout() {
             </span>
             <span className="hidden max-w-40 truncate sm:inline">
               <span className="block text-xs font-medium text-slate-700">{workspace?.name ?? "Workspace"}</span>
-              <span className="block text-[10px] text-slate-400">{auth?.user.role} · {auth?.user.email}</span>
+              <span className="block text-[10px] text-slate-400">{auth?.user.role}  ·  {auth?.user.email}</span>
             </span>
             <button type="button" onClick={() => void signOut()} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-forest" aria-label="Sign out">
               <LogOut className="h-4 w-4" aria-hidden="true" /><span className="hidden sm:inline">Sign out</span>
@@ -119,7 +126,7 @@ export function AppLayout() {
             </motion.div>
           </AnimatePresence>
           <footer className="mt-10 flex flex-wrap justify-between gap-3 border-t border-slate-200 pt-4 text-[11px] text-slate-400">
-            <span>GreenTrack · local prototype</span>
+            <span>GreenTrack  ·  local prototype</span>
             <span>Deterministic calculations are separate from optional document RAG.</span>
           </footer>
         </main>
@@ -130,9 +137,9 @@ export function AppLayout() {
 
 function Brand() {
   return (
-    <Link to="/" className="flex items-center gap-3 text-white">
-      <span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-200 font-bold text-forest">G</span>
-      <span className="text-sm font-bold tracking-tight">GreenTrack<span className="mt-0.5 block text-[8px] font-semibold tracking-[0.16em] text-emerald-100/50">CARBON INTELLIGENCE</span></span>
+    <Link to="/" className="flex items-center gap-3 text-forest">
+      <span className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-ice to-lavender font-bold text-leaf">G</span>
+      <span className="text-sm font-bold tracking-tight">GreenTrack<span className="mt-0.5 block text-[8px] font-semibold tracking-[0.16em] text-slate-400">CARBON INTELLIGENCE</span></span>
     </Link>
   );
 }

@@ -22,6 +22,8 @@ interface WorkspaceContextValue {
     email: string;
     password: string;
     account_type: AccountType;
+    workspace_name?: string;
+    location?: string;
   }) => Promise<void>;
   login: (value: { email: string; password: string }) => Promise<void>;
   logout: () => Promise<void>;
@@ -58,6 +60,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     email: string;
     password: string;
     account_type: AccountType;
+    workspace_name?: string;
+    location?: string;
   }) => {
     setAuth(await api.register(value));
   }, []);

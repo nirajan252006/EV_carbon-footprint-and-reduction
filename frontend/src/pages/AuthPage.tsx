@@ -24,8 +24,11 @@ export function AuthPage({ mode }: { mode: "register" | "login" }) {
   const registering = mode === "register";
   const accountType = registering
     ? routeType
-    : search.get("account_type") ?? undefined;
+    : routeType ?? search.get("account_type") ?? undefined;
   const [name, setName] = useState("");
+  const [institutionName, setInstitutionName] = useState("");
+  const [organizationName, setOrganizationName] = useState("");
+  const [location, setLocation] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -44,7 +47,18 @@ export function AuthPage({ mode }: { mode: "register" | "login" }) {
     setError(null);
     try {
       if (registering && isAccountType(accountType)) {
-        await register({ full_name: name.trim(), email: email.trim(), password, account_type: accountType });
+        await register({
+          full_name: name.trim(),
+          email: email.trim(),
+          password,
+          account_type: accountType,
+          workspace_name: accountType === "college"
+            ? institutionName.trim()
+            : accountType === "organization"
+              ? organizationName.trim()
+              : undefined,
+          location: location.trim() || undefined,
+        });
         navigate("/onboarding", { replace: true });
       } else {
         await login({ email: email.trim(), password });
@@ -75,19 +89,39 @@ export function AuthPage({ mode }: { mode: "register" | "login" }) {
           <span>Sessions use secure, HTTP-only cookies. Passwords never enter browser storage.</span>
         </div>
         {registering && (
-          <label className="form-label mb-4">
-            Full name
-            <input
-              className="form-input"
-              name="name"
-              autoComplete="name"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              minLength={2}
-              maxLength={120}
-              required
-            />
-          </label>
+          <>
+            <label className="form-label mb-4">
+              {accountType === "individual" ? "Full name" : "Authorized administrator name"}
+              <input
+                className="form-input"
+                name="name"
+                autoComplete="name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                minLength={2}
+                maxLength={120}
+                required
+              />
+            </label>
+            {accountType === "college" && (
+              <label className="form-label mb-4">
+                College name
+                <input className="form-input" value={institutionName} onChange={(event) => setInstitutionName(event.target.value)} minLength={2} maxLength={160} required />
+              </label>
+            )}
+            {accountType === "organization" && (
+              <label className="form-label mb-4">
+                Organization name
+                <input className="form-input" value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} minLength={2} maxLength={160} required />
+              </label>
+            )}
+            {accountType !== "individual" && (
+              <label className="form-label mb-4">
+                Campus or location <span className="font-normal text-slate-400">(optional)</span>
+                <input className="form-input" value={location} onChange={(event) => setLocation(event.target.value)} maxLength={120} />
+              </label>
+            )}
+          </>
         )}
         <label className="form-label mb-4">
           Email
@@ -128,7 +162,7 @@ export function AuthPage({ mode }: { mode: "register" | "login" }) {
           </Link>
           <Link
             className="font-medium text-leaf hover:underline"
-            to={registering ? `/login${typeLabel ? `?account_type=${accountType}` : ""}` : `/register/${isAccountType(accountType) ? accountType : "individual"}`}
+            to={registering ? `/auth/${isAccountType(accountType) ? accountType : "individual"}` : `/register/${isAccountType(accountType) ? accountType : "individual"}`}
           >
             {registering ? "Already registered? Sign in" : "New to GreenTrack? Create an account"}
           </Link>

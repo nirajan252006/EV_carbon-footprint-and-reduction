@@ -28,6 +28,7 @@ export default function App() {
           <Suspense fallback={<LoadingState />}>
             <Routes>
               <Route path="/" element={<HomeRoute />} />
+              <Route path="/auth/:accountType" element={<AuthPage mode="login" />} />
               <Route path="/register/:accountType" element={<AuthPage mode="register" />} />
               <Route path="/login" element={<AuthPage mode="login" />} />
               <Route element={<RequireAuthentication />}>
@@ -37,6 +38,15 @@ export default function App() {
                     <Route index element={<Navigate to="dashboard" replace />} />
                     <Route path="dashboard" element={<DashboardPage />} />
                     <Route path="activity" element={<ActivityPage />} />
+                    <Route path="activities" element={<ActivityPage />} />
+                    <Route path="analytics" element={<DashboardPage />} />
+                    <Route path="recommendations" element={<DashboardPage />} />
+                    <Route path="reports" element={<DashboardPage />} />
+                    <Route path="campus" element={<DashboardPage />} />
+                    <Route path="departments" element={<DashboardPage />} />
+                    <Route path="facilities" element={<DashboardPage />} />
+                    <Route path="profile" element={<DashboardPage />} />
+                    <Route path="settings" element={<DashboardPage />} />
                     <Route path="factors" element={<FactorsPage />} />
                     <Route path="assistant" element={<AssistantPage />} />
                   </Route>

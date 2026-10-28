@@ -20,6 +20,17 @@ function currentPeriod() {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function currentDate() {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function monthEnd(period: string) {
+  const [year, month] = period.split("-").map(Number);
+  const date = new Date(year, month, 0);
+  return `${period}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 export function ActivityPage() {
   const { auth } = useWorkspace();
   const accountType = auth?.user.account_type ?? "individual";
@@ -32,6 +43,7 @@ export function ActivityPage() {
   const [description, setDescription] = useState("");
   const [quantity, setQuantity] = useState("");
   const [period, setPeriod] = useState(currentPeriod);
+  const [activityDate, setActivityDate] = useState(currentDate);
   const [reportingUnit, setReportingUnit] = useState("");
   const [saved, setSaved] = useState<Activity | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +81,7 @@ export function ActivityPage() {
         quantity: Number(quantity),
         unit,
         period,
+        activity_date: activityDate,
         reporting_unit: reportingUnit.trim(),
         factor_id: factorId,
       });
@@ -108,9 +121,12 @@ export function ActivityPage() {
                 </select>
               </label>
               <label className="form-label">Reporting month
-                <input className="form-input" type="month" required value={period} onChange={(event) => setPeriod(event.target.value)} />
+                <input className="form-input" type="month" required value={period} onChange={(event) => { const selected = event.target.value; setPeriod(selected); setActivityDate(selected === currentPeriod() ? currentDate() : `${selected}-01`); }} />
               </label>
             </div>
+            <label className="form-label">Activity date
+              <input className="form-input" type="date" required min={`${period}-01`} max={monthEnd(period)} value={activityDate} onChange={(event) => setActivityDate(event.target.value)} />
+            </label>
             <label className="form-label">Description
               <input className="form-input" required minLength={2} maxLength={160} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="e.g. Monthly electricity from utility bill" />
             </label>
@@ -138,7 +154,7 @@ export function ActivityPage() {
                 }}
               >
                 <option value="">{loadingFactors ? "Loading factors…" : factors.length ? "Select a factor" : "No sourced factor for this category"}</option>
-                {factors.map((factor) => <option key={factor.id} value={factor.id}>{factor.name} · {factor.value} {factor.unit}</option>)}
+                {factors.map((factor) => <option key={factor.id} value={factor.id}>{factor.name}  ·  {factor.value} {factor.unit}</option>)}
               </select>
             </label>
             <label className="form-label">Facility / department <span className="font-normal text-slate-400">(optional)</span>
@@ -153,7 +169,7 @@ export function ActivityPage() {
             )}
             {selectedFactor && (
               <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 text-xs leading-5 text-slate-600">
-                <p className="font-semibold text-slate-700">{selectedFactor.source_name} · {selectedFactor.factor_year} · {selectedFactor.region}</p>
+                <p className="font-semibold text-slate-700">{selectedFactor.source_name}  ·  {selectedFactor.factor_year}  ·  {selectedFactor.region}</p>
                 <a className="text-leaf underline" href={selectedFactor.source_url} target="_blank" rel="noreferrer">View factor source</a>
                 {selectedFactor.assumptions && <p className="mt-1 text-slate-500">{selectedFactor.assumptions}</p>}
               </div>
@@ -167,12 +183,12 @@ export function ActivityPage() {
         <aside className="grid gap-4">
           <section className="surface-card p-5">
             <p className="text-[10px] font-bold tracking-[0.15em] text-leaf">CALCULATION METHOD</p>
-            <h2 className="mt-2 text-xl font-semibold text-forest">Activity × factor</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-500">Emissions (kg CO₂e) = measured activity quantity × selected emission factor.</p>
-            <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50/60 p-4">
-              <p className="text-xs font-semibold text-emerald-800">Illustrative arithmetic</p>
-              <p className="mt-1 text-sm font-medium text-slate-700">100 kWh × 0.8 kgCO₂e/kWh = 80 kgCO₂e</p>
-              <p className="mt-2 text-[11px] leading-5 text-slate-500">Example only—not an official or recommended emission factor.</p>
+            <h2 className="mt-2 text-xl font-semibold text-forest">Activity  ×  factor</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-500">Emissions (kg CO₂e) = measured activity quantity  ×  selected emission factor.</p>
+            <div className="mt-4 rounded-xl border border-ice bg-ice/60 p-4">
+              <p className="text-xs font-semibold text-blue-800">Calculation preview</p>
+              <p className="mt-1 text-sm font-medium text-slate-700">Measured quantity  ×  saved factor value</p>
+              <p className="mt-2 text-[11px] leading-5 text-slate-500">No result is estimated until a documented factor is selected.</p>
             </div>
             <p className="mt-4 text-xs leading-5 text-slate-500">Each record retains the factor value, unit, source, year, region, assumptions, and the formula result.</p>
           </section>
@@ -180,8 +196,8 @@ export function ActivityPage() {
             <motion.section initial={{ opacity: 0, y: 7 }} animate={{ opacity: 1, y: 0 }} className="surface-card p-5">
               <SuccessState message="Activity saved with a reproducible calculation." />
               <h2 className="mt-4 text-lg font-semibold text-forest">{saved.description}</h2>
-              <p className="mt-2 text-sm text-slate-600">{saved.quantity} {saved.unit} × {saved.factor_value} {saved.factor_unit} = <strong>{saved.emissions_kg} kg CO₂e</strong></p>
-              <p className="mt-2 text-xs text-slate-500">{saved.factor_source} · {saved.factor_year} · {saved.factor_region}</p>
+              <p className="mt-2 text-sm text-slate-600">{saved.quantity} {saved.unit}  ×  {saved.factor_value} {saved.factor_unit} = <strong>{saved.emissions_kg} kg CO₂e</strong></p>
+              <p className="mt-2 text-xs text-slate-500">{saved.factor_source}  ·  {saved.factor_year}  ·  {saved.factor_region}</p>
               <a href={saved.factor_source_url} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-leaf hover:underline">
                 <BookOpenCheck className="h-3.5 w-3.5" /> Verify factor source
               </a>

@@ -18,6 +18,28 @@ from backend.app.rag import (
 )
 
 
+def authenticate(client):
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "full_name": "Test User",
+            "email": "rag@example.com",
+            "password": "test-password-123",
+            "account_type": "individual",
+            "location": "India",
+        },
+    )
+    assert response.status_code == 201
+    csrf = client.cookies.get(main.CSRF_COOKIE_NAME)
+    if csrf:
+        client.headers["X-CSRF-Token"] = csrf
+    workspace = client.put(
+        "/api/workspace",
+        json={"name": "Test workspace", "account_type": "individual", "region": "India"},
+    )
+    assert workspace.status_code == 200
+
+
 class FakeProvider:
     def __init__(self, answer: str = "[S1] Universities can use the standard.") -> None:
         self.answer_text = answer
@@ -153,9 +175,10 @@ def test_document_deletion_removes_chunks(temporary_database):
 
 
 def test_http_upload_chat_and_source_citation(temporary_database, monkeypatch):
-    monkeypatch.setattr(main, "service", lambda: RagService(FakeProvider()))
+    monkeypatch.setattr(main, "service", lambda _workspace_id=None: RagService(FakeProvider()))
 
     with TestClient(main.app) as client:
+        authenticate(client)
         upload = client.post(
             "/api/documents",
             files={"file": ("standard.txt", b"The standard applies to universities.", "text/plain")},
@@ -176,6 +199,7 @@ def test_health_ui_and_missing_credentials(temporary_database, monkeypatch):
     monkeypatch.setattr(main, "OPENAI_API_KEY", None)
 
     with TestClient(main.app) as client:
+        authenticate(client)
         health = client.get("/api/health")
         page = client.get("/")
         style_path = re.search(r'href="([^"]+\.css)"', page.text)
@@ -197,6 +221,7 @@ def test_health_ui_and_missing_credentials(temporary_database, monkeypatch):
 
 def test_upload_rejects_bad_source_url(temporary_database):
     with TestClient(main.app) as client:
+        authenticate(client)
         response = client.post(
             "/api/documents",
             files={"file": ("standard.txt", b"sample content", "text/plain")},
@@ -209,6 +234,7 @@ def test_upload_rejects_bad_source_url(temporary_database):
 
 def test_upload_rejects_unsupported_type_and_oversize_content(temporary_database):
     with TestClient(main.app) as client:
+        authenticate(client)
         unsupported = client.post(
             "/api/documents",
             files={"file": ("instructions.exe", b"sample content", "application/octet-stream")},

@@ -17,7 +17,7 @@ export function PageHeader({
     <header className="mb-7 flex flex-wrap items-end justify-between gap-5">
       <div>
         <p className="mb-3 flex items-center gap-2 text-[10px] font-bold tracking-[0.18em] text-leaf">
-          <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_0_4px_#48a66c1c]" />
+          <span className="h-2 w-2 rounded-full bg-blue-500 shadow-[0_0_0_4px_rgba(66,102,229,0.11)]" />
           {eyebrow}
         </p>
         <h1 className="text-3xl font-semibold leading-tight tracking-[-0.04em] text-forest sm:text-4xl">

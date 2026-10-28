@@ -137,14 +137,14 @@ export function FactorsPage() {
 
         <section className="surface-card p-5 sm:p-7">
           <header className="mb-4 flex items-end justify-between gap-3">
-            <div><h2 className="text-sm font-semibold text-slate-800">Available factors</h2><p className="mt-1 text-xs text-slate-400">{factors.length} factor{factors.length === 1 ? "" : "s"} · sources saved with each calculation</p></div>
+            <div><h2 className="text-sm font-semibold text-slate-800">Available factors</h2><p className="mt-1 text-xs text-slate-400">{factors.length} factor{factors.length === 1 ? "" : "s"}  ·  sources saved with each calculation</p></div>
           </header>
           {loading ? <LoadingState label="Loading factor register…" /> : factors.length ? (
             <div className="grid gap-3">
               {factors.map((factor, index) => (
                 <motion.article key={factor.id} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.025 }} className="rounded-xl border border-slate-100 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div><h3 className="text-sm font-semibold text-slate-800">{factor.name}</h3><p className="mt-1 text-xs capitalize text-slate-400">{factor.category} · {factor.region} · {factor.factor_year}</p></div>
+                    <div><h3 className="text-sm font-semibold text-slate-800">{factor.name}</h3><p className="mt-1 text-xs capitalize text-slate-400">{factor.category}  ·  {factor.region}  ·  {factor.factor_year}</p></div>
                     <strong className="rounded-lg bg-mint px-2.5 py-1.5 text-xs font-semibold text-leaf">{factor.value} {factor.unit}</strong>
                   </div>
                   <a href={factor.source_url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-leaf hover:underline">

@@ -31,7 +31,7 @@ from .config import (
     SESSION_COOKIE_NAME,
     SESSION_TTL_SECONDS,
 )
-from .rag import ProviderError, ProviderUnavailable, RagService, is_provider_error
+from .rag import OpenAIProvider, ProviderError, ProviderUnavailable, RagService, is_provider_error
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -181,6 +181,8 @@ class RegisterRequest(BaseModel):
     email: str = Field(min_length=5, max_length=254)
     password: str = Field(min_length=12, max_length=128)
     account_type: str
+    workspace_name: str | None = Field(default=None, min_length=2, max_length=160)
+    location: str | None = Field(default=None, max_length=120)
 
     @field_validator("email")
     @classmethod
@@ -276,6 +278,7 @@ class ActivityRequest(BaseModel):
     quantity: float = Field(gt=0, le=1_000_000_000)
     unit: str = Field(min_length=1, max_length=20)
     period: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+    activity_date: str | None = Field(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$")
     reporting_unit: str = Field(default="", max_length=120)
     factor_id: str = Field(min_length=1, max_length=64)
 
@@ -284,6 +287,16 @@ class ActivityRequest(BaseModel):
     def valid_category(cls, value: str) -> str:
         if value not in {"electricity", "transport", "fuel", "waste"}:
             raise ValueError("Choose electricity, transport, fuel, or waste.")
+        return value
+
+    @field_validator("activity_date")
+    @classmethod
+    def valid_activity_date(cls, value: str | None) -> str | None:
+        if value:
+            try:
+                datetime.strptime(value, "%Y-%m-%d")
+            except ValueError as error:
+                raise ValueError("Activity date must be a valid calendar date.") from error
         return value
 
 
@@ -301,6 +314,8 @@ def register(request: RegisterRequest, response: Response) -> dict[str, object]:
             request.full_name,
             request.account_type,
             hash_password(request.password),
+            request.workspace_name,
+            request.location,
         )
     except ValueError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
@@ -443,6 +458,8 @@ def add_activity(request: ActivityRequest, http_request: Request) -> dict[str, o
     factor = database.get_factor(request.factor_id, workspace_id)
     if not factor:
         raise HTTPException(status_code=404, detail="Emission factor not found.")
+    if request.activity_date and not request.activity_date.startswith(request.period + "-"):
+        raise HTTPException(status_code=422, detail="Activity date must be within the selected reporting month.")
     try:
         emissions_kg = calculate_emissions_kg(
             request.quantity, request.unit, request.category, factor
@@ -456,6 +473,7 @@ def add_activity(request: ActivityRequest, http_request: Request) -> dict[str, o
         request.quantity,
         request.unit,
         request.period,
+        request.activity_date,
         request.reporting_unit.strip(),
         factor,
         emissions_kg,
@@ -505,8 +523,8 @@ def recommendations(
             "category": row["category"],
             "reason": f"{row['category'].title()} is a measured emissions contributor this period.",
             "action": suggestions[str(row["category"])],
-            "estimated_savings_kg": None,
-            "savings_note": "No savings estimate is shown because activity-specific reduction evidence is not available.",
+            "estimated_savings_kg": round(float(row["emissions_kg"] * 0.10), 3),
+            "savings_note": "Planning scenario: 10% of category emissions; not a measured or guaranteed saving.",
         }
         for row in data["categories"]
     ]
@@ -555,6 +573,53 @@ def _safe_csv_text(value: object) -> str:
     if text.lstrip().startswith(("=", "+", "-", "@")):
         return f"'{text}"
     return text
+
+
+@app.get("/api/carbon-explanation")
+def carbon_explanation(request: Request, period: str = Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")) -> dict[str, object]:
+    workspace_id = require_onboarding(current_principal(request))
+    dashboard_data = database.get_dashboard(workspace_id, period)
+    activities = database.list_activities(workspace_id, period)
+    category_context = "; ".join(
+        f"{row['category']}={row['emissions_kg']} kg CO2e" for row in dashboard_data["categories"]
+    ) or "no measured category emissions"
+    activity_context = "; ".join(
+        f"{row['activity_date']}: {row['description']}={row['emissions_kg']} kg CO2e; "
+        f"quantity {row['quantity']} {row['unit']} × factor {row['factor_value']} {row['factor_unit']} "
+        f"from {row['factor_source']} ({row['factor_year']})"
+        for row in activities
+    ) or "no activities recorded"
+    facts = (
+        f"Reporting month: {period}. Monthly total: {dashboard_data['total_kg']} kg CO2e. "
+        f"Category totals: {category_context}. Daily records: {activity_context}. "
+        "Explain the measured sources and calculation assumptions. Give reduction opportunities only as options. "
+        "Do not add, estimate, or replace totals or emission factors."
+    )
+    ai_generated = False
+    if OPENAI_API_KEY:
+        try:
+            explanation = OpenAIProvider().explain(facts)
+            ai_generated = True
+        except Exception as error:
+            logger.warning("Carbon explanation provider unavailable: %s", error)
+            explanation = None
+    else:
+        explanation = None
+    if not explanation:
+        explanation = (
+            f"The measured total for {period} is {dashboard_data['total_kg']} kg CO2e across {dashboard_data['activity_count']} activity records. "
+            f"Measured category totals are: {category_context}. "
+            "Each activity should be calculated as quantity multiplied by its saved, documented factor. "
+            "Reduction opportunities include reviewing the largest source categories, scheduling and efficiency improvements, and avoiding unnecessary activity, without claiming a guaranteed saving."
+        )
+    return {
+        "period": period,
+        "monthly_total_kg": dashboard_data["total_kg"],
+        "daily": dashboard_data["daily"],
+        "categories": dashboard_data["categories"],
+        "explanation": explanation,
+        "ai_generated": ai_generated,
+    }
 
 
 @app.get("/api/documents")

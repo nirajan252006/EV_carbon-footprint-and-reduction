@@ -35,6 +35,7 @@ export function OnboardingPage() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!accountType) return;
     setError(null);
     setSaving(true);
     try {
@@ -58,7 +59,7 @@ export function OnboardingPage() {
     <div className="min-h-screen bg-canvas">
       <header className="mx-auto flex max-w-6xl items-center justify-between px-5 py-6 sm:px-8">
         <Link to="/" className="flex items-center gap-3 text-forest">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-200"><Leaf className="h-5 w-5" aria-hidden="true" /></span>
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-ice"><Leaf className="h-5 w-5" aria-hidden="true" /></span>
           <span className="text-sm font-bold">GreenTrack<span className="mt-0.5 block text-[8px] tracking-[0.16em] text-slate-400">CARBON INTELLIGENCE</span></span>
         </Link>
         <span className="rounded-full bg-mint px-3 py-1.5 text-xs font-semibold text-leaf">{accountLabels[accountType]} account</span>
@@ -91,7 +92,7 @@ export function OnboardingPage() {
             Reporting region
             <input value={region} onChange={(event) => setRegion(event.target.value)} minLength={2} maxLength={120} required className="form-input" placeholder="Country, state, or reporting region" />
           </label>
-          <p className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-3 text-xs leading-5 text-slate-600">
+          <p className="rounded-xl border border-ice bg-ice/60 p-3 text-xs leading-5 text-slate-600">
             GreenTrack does not preload emission factors. Add a factor only after verifying its source, region, year, and unit.
           </p>
           {error && <div role="alert"><ErrorState message={error} /></div>}

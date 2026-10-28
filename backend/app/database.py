@@ -122,7 +122,11 @@ def initialize_database() -> None:
         _add_column(connection, "workspace", "onboarding_complete", "INTEGER NOT NULL DEFAULT 0")
         _add_column(connection, "emission_factors", "workspace_id", "TEXT")
         _add_column(connection, "activities", "workspace_id", "TEXT")
+        _add_column(connection, "activities", "activity_date", "TEXT")
         _add_column(connection, "documents", "workspace_id", "TEXT")
+        connection.execute(
+            "UPDATE activities SET activity_date = period || '-01' WHERE activity_date IS NULL"
+        )
         legacy_workspace = connection.execute(
             "SELECT id, name, account_type FROM workspace ORDER BY created_at LIMIT 1"
         ).fetchone()
@@ -174,6 +178,8 @@ def create_account(
     full_name: str,
     account_type: str,
     password_hash: str,
+    workspace_name: str | None = None,
+    location: str | None = None,
 ) -> dict[str, Any]:
     user_id = str(uuid.uuid4())
     with connect() as connection:
@@ -196,11 +202,13 @@ def create_account(
                 """
             ).fetchone()
 
+        display_name = (workspace_name or full_name).strip()
+        display_region = (location or "India").strip()
         if legacy:
             workspace_id = str(legacy["id"])
             connection.execute(
-                "UPDATE workspace SET account_type = ? WHERE id = ?",
-                (account_type, workspace_id),
+                "UPDATE workspace SET name = ?, account_type = ?, region = ? WHERE id = ?",
+                (display_name, account_type, display_region, workspace_id),
             )
         else:
             workspace_id = str(uuid.uuid4())
@@ -209,7 +217,7 @@ def create_account(
                 INSERT INTO workspace (id, name, account_type, region)
                 VALUES (?, ?, ?, ?)
                 """,
-                (workspace_id, full_name, account_type, "India"),
+                (workspace_id, display_name, account_type, display_region),
             )
 
         connection.execute(
@@ -229,18 +237,18 @@ def create_account(
         if account_type == "college":
             connection.execute(
                 """
-                INSERT OR IGNORE INTO college_profiles (workspace_id, institution_name)
-                VALUES (?, ?)
+                INSERT OR IGNORE INTO college_profiles (workspace_id, institution_name, department)
+                VALUES (?, ?, ?)
                 """,
-                (workspace_id, full_name),
+                (workspace_id, display_name, (location or "").strip()),
             )
         elif account_type == "organization":
             connection.execute(
                 """
-                INSERT OR IGNORE INTO organization_profiles (workspace_id, organization_name)
-                VALUES (?, ?)
+                INSERT OR IGNORE INTO organization_profiles (workspace_id, organization_name, sector)
+                VALUES (?, ?, ?)
                 """,
-                (workspace_id, full_name),
+                (workspace_id, display_name, (location or "").strip()),
             )
     return {"id": user_id, "workspace_id": workspace_id}
 
@@ -427,6 +435,7 @@ def save_activity(
     quantity: float,
     unit: str,
     period: str,
+    activity_date: str | None,
     reporting_unit: str,
     factor: dict[str, Any],
     emissions_kg: float,
@@ -436,14 +445,14 @@ def save_activity(
         connection.execute(
             """
             INSERT INTO activities (
-                id, workspace_id, category, description, quantity, unit, period, reporting_unit,
+                id, workspace_id, category, description, quantity, unit, period, activity_date, reporting_unit,
                 factor_id, factor_name, factor_value, factor_unit, factor_source,
                 factor_source_url, factor_year, factor_region, assumptions, emissions_kg
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 activity_id, workspace_id, category, description, quantity, unit, period,
-                reporting_unit, factor["id"], factor["name"], factor["value"],
+                activity_date or f"{period}-01", reporting_unit, factor["id"], factor["name"], factor["value"],
                 factor["unit"], factor["source_name"], factor["source_url"],
                 factor["factor_year"], factor["region"], factor["assumptions"],
                 emissions_kg,
@@ -503,6 +512,14 @@ def get_dashboard(workspace_id: str, period: str) -> dict[str, Any]:
             """,
             (workspace_id, period),
         ).fetchall()
+        daily = connection.execute(
+            """
+            SELECT activity_date, SUM(emissions_kg) AS emissions_kg
+            FROM activities WHERE workspace_id = ? AND period = ?
+            GROUP BY activity_date ORDER BY activity_date
+            """,
+            (workspace_id, period),
+        ).fetchall()
         contributors = connection.execute(
             """
             SELECT id, category, description, reporting_unit, emissions_kg
@@ -532,6 +549,7 @@ def get_dashboard(workspace_id: str, period: str) -> dict[str, Any]:
         "previous_total_kg": previous,
         "activity_count": current["activity_count"],
         "categories": [dict(row) for row in categories],
+        "daily": [dict(row) for row in daily],
         "contributors": [dict(row) for row in contributors],
         "trend": trend_rows,
         "monthly_target_kg": workspace["monthly_target_kg"] if workspace else None,
@@ -548,17 +566,26 @@ def count_documents(workspace_id: str) -> int:
         )
 
 
-def list_documents(workspace_id: str) -> list[dict[str, Any]]:
+def list_documents(workspace_id: str | None = None) -> list[dict[str, Any]]:
     with connect() as connection:
-        rows = connection.execute(
-            """
-            SELECT d.id, d.filename, d.source_url, d.created_at, COUNT(c.id) AS chunk_count
-            FROM documents d LEFT JOIN chunks c ON c.document_id = d.id
-            WHERE d.workspace_id = ?
-            GROUP BY d.id ORDER BY d.created_at DESC
-            """,
-            (workspace_id,),
-        ).fetchall()
+        if workspace_id:
+            rows = connection.execute(
+                """
+                SELECT d.id, d.filename, d.source_url, d.created_at, COUNT(c.id) AS chunk_count
+                FROM documents d LEFT JOIN chunks c ON c.document_id = d.id
+                WHERE d.workspace_id = ?
+                GROUP BY d.id ORDER BY d.created_at DESC
+                """,
+                (workspace_id,),
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                """
+                SELECT d.id, d.filename, d.source_url, d.created_at, COUNT(c.id) AS chunk_count
+                FROM documents d LEFT JOIN chunks c ON c.document_id = d.id
+                GROUP BY d.id ORDER BY d.created_at DESC
+                """,
+            ).fetchall()
     return [dict(row) for row in rows]
 
 
@@ -605,27 +632,42 @@ def save_document(
         )
 
 
-def delete_document(document_id: str, workspace_id: str) -> bool:
+def delete_document(document_id: str, workspace_id: str | None = None) -> bool:
     with connect() as connection:
         connection.execute("PRAGMA foreign_keys = ON")
-        cursor = connection.execute(
-            "DELETE FROM documents WHERE id = ? AND workspace_id = ?",
-            (document_id, workspace_id),
-        )
+        if workspace_id:
+            cursor = connection.execute(
+                "DELETE FROM documents WHERE id = ? AND workspace_id = ?",
+                (document_id, workspace_id),
+            )
+        else:
+            cursor = connection.execute("DELETE FROM documents WHERE id = ?", (document_id,))
         return cursor.rowcount > 0
 
 
-def search_chunks(workspace_id: str, query_embedding: list[float]) -> list[dict[str, Any]]:
+def search_chunks(
+    workspace_id: str | list[float], query_embedding: list[float] | None = None
+) -> list[dict[str, Any]]:
+    workspace_filter = workspace_id if isinstance(workspace_id, str) else None
     with connect() as connection:
-        rows = connection.execute(
-            """
-            SELECT c.document_id, d.filename, d.source_url, c.page_number,
-                   c.content, c.embedding
-            FROM chunks c JOIN documents d ON d.id = c.document_id
-            WHERE d.workspace_id = ?
-            """,
-            (workspace_id,),
-        ).fetchall()
+        if workspace_filter:
+            rows = connection.execute(
+                """
+                SELECT c.document_id, d.filename, d.source_url, c.page_number,
+                       c.content, c.embedding
+                FROM chunks c JOIN documents d ON d.id = c.document_id
+                WHERE d.workspace_id = ?
+                """,
+                (workspace_filter,),
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                """
+                SELECT c.document_id, d.filename, d.source_url, c.page_number,
+                       c.content, c.embedding
+                FROM chunks c JOIN documents d ON d.id = c.document_id
+                """,
+            ).fetchall()
     return [
         {
             "document_id": row["document_id"],

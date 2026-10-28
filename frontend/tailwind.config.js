@@ -4,10 +4,15 @@ export default {
   theme: {
     extend: {
       colors: {
-        forest: "#102a21",
-        leaf: "#18764b",
-        mint: "#e5f3e8",
-        canvas: "#f4f7f4",
+        forest: "#17233D",
+        leaf: "#4266E5",
+        mint: "#E8F1FF",
+        canvas: "#F7F9FC",
+        midnight: "#17233D",
+        ice: "#E8F1FF",
+        lavender: "#F0EBFF",
+        violet: "#8061DB",
+        silver: "#E4E9F2",
       },
       fontFamily: {
         sans: ["Inter", "Segoe UI", "sans-serif"],

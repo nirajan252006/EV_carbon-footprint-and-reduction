@@ -60,7 +60,7 @@ function jsonBody(value: unknown): RequestInit {
 
 export const api = {
   getMe: () => request<AuthState>("/api/auth/me"),
-  register: (value: { full_name: string; email: string; password: string; account_type: AccountType }) =>
+  register: (value: { full_name: string; email: string; password: string; account_type: AccountType; workspace_name?: string; location?: string }) =>
     request<AuthState>("/api/auth/register", jsonBody(value)),
   login: (value: { email: string; password: string }) =>
     request<AuthState>("/api/auth/login", jsonBody(value)),
@@ -87,6 +87,7 @@ export const api = {
     quantity: number;
     unit: string;
     period: string;
+    activity_date?: string;
     reporting_unit: string;
     factor_id: string;
   }) => request<Activity>("/api/activities", jsonBody(value)),
@@ -112,6 +113,8 @@ export const api = {
     }),
   getRecommendations: (period: string) =>
     request<Recommendation[]>(`/api/recommendations?period=${encodeURIComponent(period)}`),
+  getCarbonExplanation: (period: string) =>
+    request<{ period: string; monthly_total_kg: number; daily: Array<{ activity_date: string; emissions_kg: number }>; categories: Array<{ category: string; emissions_kg: number }>; explanation: string; ai_generated: boolean }>(`/api/carbon-explanation?period=${encodeURIComponent(period)}`),
   getDocuments: () => request<RagDocument[]>("/api/documents"),
   addSampleDocument: () => request<{ filename: string }>("/api/documents/sample", { method: "POST" }),
   uploadDocument: (form: FormData) =>

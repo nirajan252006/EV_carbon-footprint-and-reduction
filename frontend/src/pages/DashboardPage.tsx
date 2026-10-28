@@ -13,6 +13,8 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
   Cell,
   Legend,
@@ -32,10 +34,10 @@ import { api } from "../services/api";
 import type { Activity, DashboardData, Recommendation } from "../types/api";
 
 const CATEGORY_COLORS: Record<string, string> = {
-  electricity: "#168052",
-  transport: "#4b8fc1",
-  fuel: "#d18b3b",
-  waste: "#8c78bd",
+  electricity: "#4266E5",
+  transport: "#8061DB",
+  fuel: "#F59E0B",
+  waste: "#8EA1B5",
 };
 
 function currentPeriod() {
@@ -60,6 +62,7 @@ export function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [explanation, setExplanation] = useState<{ explanation: string; ai_generated: boolean; daily: Array<{ activity_date: string; emissions_kg: number }> } | null>(null);
   const [targetInput, setTargetInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -70,14 +73,16 @@ export function DashboardPage() {
     setLoading(true);
     setError(null);
     try {
-      const [dashboard, records, tips] = await Promise.all([
+      const [dashboard, records, tips, carbonExplanation] = await Promise.all([
         api.getDashboard(period),
         api.getActivities(period),
         api.getRecommendations(period),
+        api.getCarbonExplanation(period),
       ]);
       setData(dashboard);
       setActivities(records);
       setRecommendations(tips);
+      setExplanation(carbonExplanation);
       setTargetInput(dashboard.monthly_target_kg?.toString() ?? "");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Dashboard data could not be loaded.");
@@ -181,7 +186,7 @@ export function DashboardPage() {
       </div>
 
       {error && <div className="mb-4"><ErrorState message={error} /></div>}
-      {notice && <p role="status" className="mb-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
+      {notice && <p role="status" className="mb-4 rounded-lg bg-ice p-3 text-sm text-blue-800">{notice}</p>}
 
       {!data?.categories.length && (
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
@@ -196,7 +201,7 @@ export function DashboardPage() {
       {data && (
         <>
           <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="TOTAL CO₂e · THIS MONTH" value={`${number(data.total_kg)} kg`} note={`${data.activity_count} recorded ${data.activity_count === 1 ? "activity" : "activities"}`} icon={Gauge} />
+            <MetricCard label="TOTAL CO₂e  ·  THIS MONTH" value={`${number(data.total_kg)} kg`} note={`${data.activity_count} recorded ${data.activity_count === 1 ? "activity" : "activities"}`} icon={Gauge} />
             <MetricCard label="CATEGORY COVERAGE" value={`${data.categories.length} / 4`} note="Categories with recorded emissions" icon={Zap} />
             <MetricCard
               label="PREVIOUS PERIOD"
@@ -232,20 +237,38 @@ export function DashboardPage() {
                 </div>
               ) : <EmptyState>No emissions recorded in {monthLabel(period)}.</EmptyState>}
             </Panel>
-            <Panel title="Six-month trend" subtitle="Persisted monthly totals · kg CO₂e">
+            <Panel title="Six-month trend" subtitle="Persisted monthly totals  ·  kg CO₂e">
               {data.trend.length ? (
                 <div className="h-72">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={data.trend} margin={{ top: 16, right: 12, bottom: 3, left: 3 }}>
-                      <CartesianGrid stroke="#edf1ee" strokeDasharray="4 4" vertical={false} />
+                      <CartesianGrid stroke="#E4E9F2" strokeDasharray="4 4" vertical={false} />
                       <XAxis dataKey="period" tickFormatter={monthLabel} tickLine={false} axisLine={false} fontSize={11} />
                       <YAxis tickLine={false} axisLine={false} fontSize={11} width={44} />
                       <Tooltip labelFormatter={(label) => monthLabel(String(label))} formatter={(value) => [`${number(Number(value))} kg CO₂e`, "Emissions"]} />
-                      <Line type="monotone" dataKey="emissions_kg" name="Emissions" stroke="#168052" strokeWidth={3} dot={{ r: 4, fill: "#168052", strokeWidth: 2, stroke: "#fff" }} activeDot={{ r: 6 }} />
+                      <Line type="monotone" dataKey="emissions_kg" name="Emissions" stroke="#4266E5" strokeWidth={3} dot={{ r: 4, fill: "#4266E5", strokeWidth: 2, stroke: "#fff" }} activeDot={{ r: 6 }} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
               ) : <EmptyState>Add activity to begin a trend.</EmptyState>}
+            </Panel>
+          </section>
+
+          <section className="mt-4">
+            <Panel title="Daily emissions" subtitle="Persisted activity totals  ·  kg CO₂e">
+              {data.daily.length ? (
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={data.daily} margin={{ top: 16, right: 12, bottom: 3, left: 3 }}>
+                      <CartesianGrid stroke="#E4E9F2" strokeDasharray="4 4" vertical={false} />
+                      <XAxis dataKey="activity_date" tickFormatter={(value) => String(value).slice(8, 10)} tickLine={false} axisLine={false} fontSize={11} />
+                      <YAxis tickLine={false} axisLine={false} fontSize={11} width={44} />
+                      <Tooltip labelFormatter={(label) => `Day ${String(label).slice(8, 10)}  ·  ${monthLabel(period)}`} formatter={(value) => [`${number(Number(value))} kg CO₂e`, "Emissions"]} />
+                      <Bar dataKey="emissions_kg" name="Emissions" fill="#4266E5" radius={[5, 5, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : <EmptyState>No daily emissions recorded in {monthLabel(period)}.</EmptyState>}
             </Panel>
           </section>
 
@@ -258,7 +281,7 @@ export function DashboardPage() {
                       <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-mint text-xs font-bold text-leaf">{String(index + 1).padStart(2, "0")}</span>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-slate-700">{item.description}</p>
-                        <p className="mt-0.5 text-xs capitalize text-slate-400">{item.category} {item.reporting_unit ? `· ${item.reporting_unit}` : ""}</p>
+                        <p className="mt-0.5 text-xs capitalize text-slate-400">{item.category} {item.reporting_unit ? ` ·  ${item.reporting_unit}` : ""}</p>
                       </div>
                       <strong className="text-sm tabular-nums text-forest">{number(item.emissions_kg)} kg</strong>
                     </div>
@@ -266,7 +289,7 @@ export function DashboardPage() {
                 </div>
               ) : <EmptyState>No contributors in this reporting period.</EmptyState>}
             </Panel>
-            <Panel title="Practical next steps" subtitle="Rules-based prompts · no unsupported savings claims">
+            <Panel title="Practical next steps" subtitle="Rules-based prompts  ·  no unsupported savings claims">
               {recommendations.length ? (
                 <div className="grid gap-3">
                   {recommendations.map((item) => (
@@ -274,6 +297,11 @@ export function DashboardPage() {
                       <p className="flex items-center gap-2 text-sm font-semibold capitalize text-leaf"><Sparkles className="h-4 w-4" />{item.category}</p>
                       <p className="mt-1 text-xs text-slate-500">{item.reason}</p>
                       <p className="mt-2 text-sm leading-5 text-slate-700">{item.action}</p>
+                      {item.estimated_savings_kg !== null && (
+                        <p className="mt-2 text-xs font-medium text-blue-700">
+                          Planning scenario: {number(item.estimated_savings_kg)} kg CO₂e  ·  {item.savings_note}
+                        </p>
+                      )}
                     </motion.article>
                   ))}
                 </div>
@@ -281,19 +309,34 @@ export function DashboardPage() {
             </Panel>
           </section>
 
-          <Panel title="Recent activity" subtitle={`Saved records · ${monthLabel(period)}`} className="mt-4">
+          {explanation && (
+            <Panel title="Measured emissions explanation" subtitle={explanation.ai_generated ? "AI-assisted  ·  facts supplied by GreenTrack" : "Deterministic fallback  ·  AI provider unavailable"} className="mt-4">
+              <p className="text-sm leading-6 text-slate-700">{explanation.explanation}</p>
+              {!!explanation.daily.length && (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {explanation.daily.map((day) => (
+                    <span key={day.activity_date} className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                      {day.activity_date}: <strong className="text-forest">{number(day.emissions_kg)} kg CO₂e</strong>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </Panel>
+          )}
+
+          <Panel title="Recent activity" subtitle={`Saved records  ·  ${monthLabel(period)}`} className="mt-4">
             {activities.length ? (
               <div className="divide-y divide-slate-100">
                 {activities.slice(0, 8).map((activity) => (
                   <article key={activity.id} className="grid gap-2 py-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center sm:gap-4">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-slate-700">{activity.description}</p>
-                      <p className="mt-0.5 text-xs capitalize text-slate-400">{activity.category} · {activity.quantity} {activity.unit}{activity.reporting_unit ? ` · ${activity.reporting_unit}` : ""}</p>
+                      <p className="mt-0.5 text-xs capitalize text-slate-400">{activity.category}  ·  {activity.quantity} {activity.unit}{activity.reporting_unit ? `  ·  ${activity.reporting_unit}` : ""}</p>
                     </div>
                     <div className="sm:text-right">
                       <p className="text-sm font-semibold tabular-nums text-forest">{number(activity.emissions_kg)} kg CO₂e</p>
                       <a href={activity.factor_source_url} target="_blank" rel="noreferrer" className="text-[11px] text-leaf hover:underline">
-                        {activity.factor_name} · {activity.factor_year}
+                        {activity.factor_name}  ·  {activity.factor_year}
                       </a>
                     </div>
                     <button onClick={() => void removeActivity(activity)} title="Delete activity" aria-label={`Delete ${activity.description}`} className="justify-self-end rounded-lg p-2 text-slate-300 hover:bg-rose-50 hover:text-rose-600">
@@ -327,7 +370,7 @@ function MetricCard({
     <motion.article initial={{ opacity: 0, y: 7 }} animate={{ opacity: 1, y: 0 }} className="surface-card p-4 sm:p-5">
       <div className="flex items-start justify-between gap-3">
         <span className="text-[9px] font-bold tracking-[0.13em] text-slate-400">{label}</span>
-        <span className={`grid h-8 w-8 place-items-center rounded-lg ${positive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}><Icon className="h-4 w-4" /></span>
+        <span className={`grid h-8 w-8 place-items-center rounded-lg ${positive ? "bg-ice text-blue-700" : "bg-slate-100 text-slate-500"}`}><Icon className="h-4 w-4" /></span>
       </div>
       <p className="mt-3 text-2xl font-semibold tracking-tight text-forest">{value}</p>
       <p className="mt-1 text-xs text-slate-400">{note}</p>

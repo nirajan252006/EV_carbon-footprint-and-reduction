@@ -80,6 +80,28 @@ class OpenAIProvider:
             raise ProviderError("The answer provider returned an empty response.")
         return answer.strip()
 
+    def explain(self, context: str) -> str:
+        result = self.client.chat.completions.create(
+            model=OPENAI_CHAT_MODEL,
+            temperature=0,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Explain measured carbon results using only the supplied calculation facts. "
+                        "Never invent an activity, total, factor, date, source, or reduction saving. "
+                        "Describe emission sources, quantity × factor assumptions, and practical reduction opportunities. "
+                        "Clearly label any recommendation as an option, not a measured saving."
+                    ),
+                },
+                {"role": "user", "content": context},
+            ],
+        )
+        answer = result.choices[0].message.content
+        if not answer:
+            raise ProviderError("The explanation provider returned an empty response.")
+        return answer.strip()
+
 
 @dataclass(frozen=True)
 class TextPage:
@@ -163,9 +185,14 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
 
 
 class RagService:
-    def __init__(self, workspace_id: str, provider: AIProvider | None = None) -> None:
-        self.workspace_id = workspace_id
-        self.provider = provider or OpenAIProvider()
+    def __init__(self, workspace_id: str | AIProvider, provider: AIProvider | None = None) -> None:
+        if isinstance(workspace_id, str):
+            self.workspace_id = workspace_id
+            self.provider = provider or OpenAIProvider()
+        else:
+            # Backward-compatible test/programmatic construction.
+            self.workspace_id = "default"
+            self.provider = workspace_id
 
     def _embed(self, texts: list[str]) -> list[list[float]]:
         vectors: list[list[float]] = []

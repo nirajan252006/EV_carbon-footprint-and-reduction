@@ -17,7 +17,7 @@ export function AuthShell({
     <div className="min-h-screen bg-canvas">
       <header className="mx-auto flex max-w-6xl items-center px-5 py-6 sm:px-8">
         <Link to="/" className="flex items-center gap-3 text-forest">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-200">
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-ice">
             <Leaf className="h-5 w-5" aria-hidden="true" />
           </span>
           <span className="text-sm font-bold">
