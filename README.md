@@ -53,6 +53,8 @@ Optional environment settings:
 | `OPENAI_CHAT_MODEL` | `gpt-4o-mini` | Answer-generation model |
 | `RAG_TOP_K` | `4` | Maximum retrieved chunks |
 | `RAG_SIMILARITY_THRESHOLD` | `0.3` | Minimum cosine similarity |
+| `RAG_CHUNK_SIZE` | `900` | Chunk length in characters |
+| `RAG_CHUNK_OVERLAP` | `120` | Overlap between consecutive chunks |
 
 ## API
 

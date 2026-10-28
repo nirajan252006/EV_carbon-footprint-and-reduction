@@ -31,10 +31,10 @@ function showStatus(ready, text) {
   statusBanner.classList.toggle("ready", ready);
   statusBanner.classList.toggle("error", !ready);
   statusBanner.querySelector("strong").textContent = ready
-    ? "AI provider connected"
+    ? "AI provider configured"
     : "AI provider setup required";
   statusBanner.querySelector("div span").textContent = text;
-  statusBanner.querySelector(".status-pill").textContent = ready ? "READY" : "SETUP";
+  statusBanner.querySelector(".status-pill").textContent = ready ? "CONFIGURED" : "SETUP";
   statusBanner.querySelector(".status-icon").textContent = ready ? "✓" : "!";
 }
 
@@ -176,7 +176,7 @@ sampleButton.addEventListener("click", async () => {
     showError(error.message);
   } finally {
     sampleButton.disabled = false;
-    sampleButton.textContent = "Add verified sample source";
+    sampleButton.textContent = "Index GHG Protocol source notes";
   }
 });
 

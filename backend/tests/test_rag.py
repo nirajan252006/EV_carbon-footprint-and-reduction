@@ -1,7 +1,13 @@
-import pytest
+from pathlib import Path
+from io import BytesIO
 
-from app import database
-from app.rag import (
+import pytest
+from fastapi.testclient import TestClient
+from pypdf import PdfWriter
+
+from backend.app import database
+from backend.app import main
+from backend.app.rag import (
     ProviderError,
     RagService,
     TextPage,
@@ -14,8 +20,10 @@ from app.rag import (
 class FakeProvider:
     def __init__(self, answer: str = "[S1] Universities can use the standard.") -> None:
         self.answer_text = answer
+        self.batch_sizes: list[int] = []
 
     def embed(self, texts: list[str]) -> list[list[float]]:
+        self.batch_sizes.append(len(texts))
         return [
             [1.0, 0.0] if "universit" in text.lower() or "standard" in text.lower() else [0.0, 1.0]
             for text in texts
@@ -35,11 +43,11 @@ def temporary_database(tmp_path, monkeypatch):
 
 def test_extract_and_chunk_text_preserves_document_metadata():
     pages = extract_pages("guide.txt", b"  First\tpage.\nMore text.  ")
-    chunks = chunk_pages(pages, chunk_size=10, overlap=2)
+    chunks = chunk_pages(pages, chunk_size=14, overlap=3)
 
     assert len(chunks) > 1
     assert all(chunk["page_number"] is None for chunk in chunks)
-    assert "".join(str(chunk["content"]) for chunk in chunks).replace(" ", "")
+    assert all(chunk["content"] for chunk in chunks)
     assert "First page." in str(chunks[0]["content"])
 
 
@@ -48,6 +56,12 @@ def test_pdf_validation_and_empty_documents():
         extract_pages("guide.pdf", b"not a pdf")
     with pytest.raises(ValueError, match="no extractable text"):
         extract_pages("empty.txt", b" \n\t ")
+    writer = PdfWriter()
+    writer.add_blank_page(width=72, height=72)
+    pdf = BytesIO()
+    writer.write(pdf)
+    with pytest.raises(ValueError, match="no extractable text"):
+        extract_pages("blank.pdf", pdf.getvalue())
 
 
 def test_chunking_rejects_invalid_overlap():
@@ -85,6 +99,49 @@ def test_generation_rejects_citations_not_in_retrieved_context(temporary_databas
         service.chat("Does the standard apply to universities?")
 
 
+def test_irrelevant_question_returns_insufficient_evidence(temporary_database):
+    service = RagService(FakeProvider())
+    service.ingest("standard.txt", b"The standard applies to universities.")
+
+    response = service.chat("How should I maintain a bicycle?")
+
+    assert response["insufficient_evidence"] is True
+    assert response["sources"] == []
+
+
+def test_bundled_ghg_protocol_source_produces_a_verifiable_citation(temporary_database):
+    sample_path = (
+        Path(__file__).resolve().parents[1]
+        / "seed_documents"
+        / "ghg-protocol-corporate-standard.md"
+    )
+    service = RagService(FakeProvider())
+    service.ingest(
+        sample_path.name,
+        sample_path.read_bytes(),
+        "https://ghgprotocol.org/corporate-standard",
+    )
+
+    response = service.chat("Who can use the GHG Protocol Corporate Standard?")
+
+    assert response["sources"][0]["filename"] == sample_path.name
+    assert response["sources"][0]["source_url"] == "https://ghgprotocol.org/corporate-standard"
+    assert response["answer"].startswith("[S1]")
+
+
+def test_embedding_requests_are_batched_and_storage_persists(temporary_database):
+    provider = FakeProvider()
+    service = RagService(provider)
+    content = ("ordinary words " * 7000).encode()
+
+    service.ingest("long.txt", content)
+    database.initialize_database()
+
+    assert len(provider.batch_sizes) > 1
+    assert max(provider.batch_sizes) <= 64
+    assert database.list_documents()[0]["chunk_count"] > 64
+
+
 def test_document_deletion_removes_chunks(temporary_database):
     service = RagService(FakeProvider())
     document = service.ingest("standard.txt", b"The standard applies to universities.")
@@ -92,3 +149,77 @@ def test_document_deletion_removes_chunks(temporary_database):
     assert database.delete_document(str(document["id"])) is True
     assert database.search_chunks([1.0, 0.0]) == []
     assert database.delete_document(str(document["id"])) is False
+
+
+def test_http_upload_chat_and_source_citation(temporary_database, monkeypatch):
+    monkeypatch.setattr(main, "service", lambda: RagService(FakeProvider()))
+
+    with TestClient(main.app) as client:
+        upload = client.post(
+            "/api/documents",
+            files={"file": ("standard.txt", b"The standard applies to universities.", "text/plain")},
+            data={"source_url": "https://example.org/standard"},
+        )
+        answer = client.post(
+            "/api/chat",
+            json={"question": "Does the standard apply to universities?"},
+        )
+
+    assert upload.status_code == 201
+    assert upload.json()["chunk_count"] == 1
+    assert answer.status_code == 200
+    assert answer.json()["sources"][0]["source_url"] == "https://example.org/standard"
+
+
+def test_health_ui_and_missing_credentials(temporary_database, monkeypatch):
+    monkeypatch.setattr(main, "OPENAI_API_KEY", None)
+
+    with TestClient(main.app) as client:
+        health = client.get("/api/health")
+        page = client.get("/")
+        stylesheet = client.get("/assets/styles.css")
+        chat = client.post("/api/chat", json={"question": "Explain sustainability guidance"})
+        sample = client.post("/api/documents/sample")
+        blank_question = client.post("/api/chat", json={"question": "   "})
+
+    assert health.status_code == 200
+    assert health.json()["ai_provider_configured"] is False
+    assert page.status_code == 200
+    assert "GreenTrack" in page.text
+    assert stylesheet.status_code == 200
+    assert chat.status_code == 503
+    assert sample.status_code == 503
+    assert blank_question.status_code == 422
+
+
+def test_upload_rejects_bad_source_url(temporary_database):
+    with TestClient(main.app) as client:
+        response = client.post(
+            "/api/documents",
+            files={"file": ("standard.txt", b"sample content", "text/plain")},
+            data={"source_url": "javascript:alert(1)"},
+        )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Source URL must use HTTP or HTTPS."
+
+
+def test_upload_rejects_unsupported_type_and_oversize_content(temporary_database):
+    with TestClient(main.app) as client:
+        unsupported = client.post(
+            "/api/documents",
+            files={"file": ("instructions.exe", b"sample content", "application/octet-stream")},
+        )
+        too_large = client.post(
+            "/api/documents",
+            files={
+                "file": (
+                    "large.txt",
+                    b"x" * (main.MAX_UPLOAD_BYTES + 1),
+                    "text/plain",
+                )
+            },
+        )
+
+    assert unsupported.status_code == 415
+    assert too_large.status_code == 413

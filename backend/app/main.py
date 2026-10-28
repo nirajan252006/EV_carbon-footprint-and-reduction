@@ -7,6 +7,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
 from . import database
 from .config import MAX_UPLOAD_BYTES, OPENAI_API_KEY, ROOT_DIR
@@ -72,7 +73,7 @@ async def upload_document(
 
     rag = service()
     try:
-        return rag.ingest(file.filename, content, source_url)
+        return await run_in_threadpool(rag.ingest, file.filename, content, source_url)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
@@ -88,8 +89,9 @@ async def upload_document(
 @app.post("/api/documents/sample", status_code=201)
 def add_sample_document() -> dict[str, object]:
     sample_path = Path(__file__).resolve().parents[1] / "seed_documents" / "ghg-protocol-corporate-standard.md"
+    rag = service()
     try:
-        return service().ingest(
+        return rag.ingest(
             sample_path.name,
             sample_path.read_bytes(),
             "https://ghgprotocol.org/corporate-standard",
@@ -115,9 +117,12 @@ def remove_document(document_id: str) -> None:
 
 @app.post("/api/chat")
 def chat(request: ChatRequest) -> dict[str, object]:
+    question = request.question.strip()
+    if len(question) < 3:
+        raise HTTPException(status_code=422, detail="Question must contain at least 3 non-space characters.")
     rag = service()
     try:
-        return rag.chat(request.question.strip())
+        return rag.chat(question)
     except Exception as error:
         if is_provider_error(error):
             logger.exception("Knowledge assistant request failed.")
@@ -128,7 +133,7 @@ def chat(request: ChatRequest) -> dict[str, object]:
         raise
 
 
-FRONTEND_DIR = ROOT_DIR.parent / "frontend"
+FRONTEND_DIR = ROOT_DIR / "frontend"
 app.mount("/assets", StaticFiles(directory=FRONTEND_DIR), name="assets")
 
 
