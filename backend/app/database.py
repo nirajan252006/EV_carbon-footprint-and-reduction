@@ -428,6 +428,46 @@ def get_factor(factor_id: str, workspace_id: str) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
+def get_or_create_placeholder_factor(
+    workspace_id: str, category: str, unit: str
+) -> dict[str, Any]:
+    factor_unit = f"kgCO2e/{unit}"
+    with connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM emission_factors WHERE workspace_id = ? AND category = ? AND unit = ? LIMIT 1",
+            (workspace_id, category, factor_unit),
+        ).fetchone()
+        if row:
+            return dict(row)
+
+        factor_id = str(uuid.uuid4())
+        connection.execute(
+            """
+            INSERT INTO emission_factors
+                (id, workspace_id, category, name, value, unit, source_name, source_url,
+                 factor_year, region, assumptions)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                factor_id,
+                workspace_id,
+                category,
+                "No verified emission factor",
+                0,
+                factor_unit,
+                "Not provided",
+                "",
+                0,
+                "Not specified",
+                "Activity stored without carbon calculation until a verified factor is added.",
+            ),
+        )
+        row = connection.execute(
+            "SELECT * FROM emission_factors WHERE id = ?", (factor_id,)
+        ).fetchone()
+    return dict(row)
+
+
 def save_activity(
     workspace_id: str,
     category: str,

@@ -79,6 +79,13 @@ export const api = {
   getHealth: () => request<HealthStatus>("/api/health"),
   getDashboard: (period: string) =>
     request<DashboardData>(`/api/dashboard?period=${encodeURIComponent(period)}`),
+  getAnalytics: (metric: string, params: Record<string, string | number | null | undefined> = {}) => {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== "") query.set(key, String(value));
+    });
+    return request<Record<string, any>>(`/api/analytics/${encodeURIComponent(metric)}${query.size ? `?${query}` : ""}`);
+  },
   getActivities: (period: string) =>
     request<Activity[]>(`/api/activities?period=${encodeURIComponent(period)}`),
   addActivity: (value: {
@@ -89,7 +96,7 @@ export const api = {
     period: string;
     activity_date?: string;
     reporting_unit: string;
-    factor_id: string;
+    factor_id: string | null;
   }) => request<Activity>("/api/activities", jsonBody(value)),
   deleteActivity: (id: string) =>
     request<void>(`/api/activities/${encodeURIComponent(id)}`, { method: "DELETE" }),

@@ -13,6 +13,16 @@ const DashboardPage = lazy(() => import("../pages/DashboardPage").then((module) 
 const ActivityPage = lazy(() => import("../pages/ActivityPage").then((module) => ({ default: module.ActivityPage })));
 const FactorsPage = lazy(() => import("../pages/FactorsPage").then((module) => ({ default: module.FactorsPage })));
 const AssistantPage = lazy(() => import("../pages/AssistantPage").then((module) => ({ default: module.AssistantPage })));
+const CampusProfilePage = lazy(() => import("../pages/CollegePortalPages").then((module) => ({ default: module.CampusProfilePage })));
+const AdvancedAnalyticsPage = lazy(() => import("../pages/AdvancedAnalyticsPage").then((module) => ({ default: module.AdvancedAnalyticsPage })));
+const CollegeAnalyticsPage = lazy(() => import("../pages/CollegePortalPages").then((module) => ({ default: module.CollegeAnalyticsPage })));
+const CollegeRecommendationsPage = lazy(() => import("../pages/CollegePortalPages").then((module) => ({ default: module.CollegeRecommendationsPage })));
+const CollegeReportsPage = lazy(() => import("../pages/CollegePortalPages").then((module) => ({ default: module.CollegeReportsPage })));
+const CollegeCapabilityPage = lazy(() => import("../pages/CollegePortalPages").then((module) => ({ default: module.CollegeCapabilityPage })));
+const ReductionPlannerPage = lazy(() => import("../pages/CollegeManagementPages").then((module) => ({ default: module.ReductionPlannerPage })));
+const SustainabilityGoalsPage = lazy(() => import("../pages/CollegeManagementPages").then((module) => ({ default: module.SustainabilityGoalsPage })));
+const CollegeDataExchangePage = lazy(() => import("../pages/CollegeManagementPages").then((module) => ({ default: module.CollegeDataExchangePage })));
+const CollegeNotificationsPage = lazy(() => import("../pages/CollegeManagementPages").then((module) => ({ default: module.CollegeNotificationsPage })));
 
 const accountTypes: AccountType[] = ["individual", "college", "organization"];
 
@@ -39,14 +49,19 @@ export default function App() {
                     <Route path="dashboard" element={<DashboardPage />} />
                     <Route path="activity" element={<ActivityPage />} />
                     <Route path="activities" element={<ActivityPage />} />
-                    <Route path="analytics" element={<DashboardPage />} />
-                    <Route path="recommendations" element={<DashboardPage />} />
-                    <Route path="reports" element={<DashboardPage />} />
-                    <Route path="campus" element={<DashboardPage />} />
-                    <Route path="departments" element={<DashboardPage />} />
-                    <Route path="facilities" element={<DashboardPage />} />
-                    <Route path="profile" element={<DashboardPage />} />
-                    <Route path="settings" element={<DashboardPage />} />
+                    <Route path="analytics" element={<CollegeAnalyticsRoute />} />
+                    <Route path="recommendations" element={<CollegeRecommendationsRoute />} />
+                    <Route path="reports" element={<CollegeReportsRoute />} />
+                    <Route path="campus" element={<CollegeCampusRoute />} />
+                    <Route path="departments" element={<CollegeDepartmentsRoute />} />
+                    <Route path="facilities" element={<CollegeFacilitiesRoute />} />
+                    <Route path="profile" element={<CollegeProfileRoute />} />
+                    <Route path="settings" element={<CollegeSettingsRoute />} />
+                    <Route path="inventory" element={<CollegeInventoryRoute />} />
+                    <Route path="reduction-planner" element={<CollegeReductionPlannerRoute />} />
+                    <Route path="goals" element={<CollegeGoalsRoute />} />
+                    <Route path="data-exchange" element={<CollegeDataExchangeRoute />} />
+                    <Route path="notifications" element={<CollegeNotificationsRoute />} />
                     <Route path="factors" element={<FactorsPage />} />
                     <Route path="assistant" element={<AssistantPage />} />
                   </Route>
@@ -82,6 +97,70 @@ function OnboardingRoute() {
   if (!auth) return <Navigate to="/" replace />;
   if (auth.onboarding_complete) return <Navigate to={`/${auth.user.account_type}/dashboard`} replace />;
   return <OnboardingPage />;
+}
+
+function CollegeAnalyticsRoute() {
+  return <AdvancedAnalyticsPage />;
+}
+
+function CollegeRecommendationsRoute() {
+  const { auth } = useWorkspace();
+  return auth?.user.account_type === "college" ? <CollegeRecommendationsPage /> : <DashboardPage />;
+}
+
+function CollegeReportsRoute() {
+  const { auth } = useWorkspace();
+  return auth?.user.account_type === "college" ? <CollegeReportsPage /> : <DashboardPage />;
+}
+
+function CollegeCampusRoute() {
+  const { auth } = useWorkspace();
+  return auth?.user.account_type === "college" ? <CampusProfilePage /> : <DashboardPage />;
+}
+
+function CollegeProfileRoute() {
+  const { auth } = useWorkspace();
+  return auth?.user.account_type === "college" ? <CampusProfilePage /> : <DashboardPage />;
+}
+
+function CollegeSettingsRoute() {
+  const { auth } = useWorkspace();
+  return auth?.user.account_type === "college" ? <CampusProfilePage /> : <DashboardPage />;
+}
+
+function CollegeDepartmentsRoute() {
+  const { auth } = useWorkspace();
+  return auth?.user.account_type === "college" ? <CollegeCapabilityPage kind="departments" /> : <DashboardPage />;
+}
+
+function CollegeFacilitiesRoute() {
+  const { auth } = useWorkspace();
+  return auth?.user.account_type === "college" ? <CollegeCapabilityPage kind="facilities" /> : <DashboardPage />;
+}
+
+function CollegeInventoryRoute() {
+  const { auth } = useWorkspace();
+  return auth?.user.account_type === "college" ? <CollegeAnalyticsPage /> : <DashboardPage />;
+}
+
+function CollegeReductionPlannerRoute() {
+  const { auth } = useWorkspace();
+  return auth?.user.account_type === "college" ? <ReductionPlannerPage /> : <DashboardPage />;
+}
+
+function CollegeGoalsRoute() {
+  const { auth } = useWorkspace();
+  return auth?.user.account_type === "college" ? <SustainabilityGoalsPage /> : <DashboardPage />;
+}
+
+function CollegeDataExchangeRoute() {
+  const { auth } = useWorkspace();
+  return auth?.user.account_type === "college" ? <CollegeDataExchangePage /> : <DashboardPage />;
+}
+
+function CollegeNotificationsRoute() {
+  const { auth } = useWorkspace();
+  return auth?.user.account_type === "college" ? <CollegeNotificationsPage /> : <DashboardPage />;
 }
 
 function AccountTypeRoute() {

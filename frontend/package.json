@@ -6,10 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "lint": "tsc --noEmit",
     "preview": "vite preview"
   },
   "dependencies": {
     "framer-motion": "^12.6.2",
+    "date-fns": "^4.1.0",
+    "html-to-image": "^1.11.13",
+    "jspdf": "^3.0.3",
+    "react-countup": "^6.5.3",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

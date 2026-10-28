@@ -22,6 +22,7 @@ from starlette.concurrency import run_in_threadpool
 from . import database
 from .auth import hash_password, hash_token, new_session_token, verify_password
 from .carbon import calculate_emissions_kg
+from . import analytics as analytics_service
 from .config import (
     COOKIE_SECURE,
     CSRF_COOKIE_NAME,
@@ -274,13 +275,13 @@ class ActivityRequest(BaseModel):
     model_config = ConfigDict(allow_inf_nan=False)
 
     category: str
-    description: str = Field(min_length=2, max_length=160)
+    description: str = Field(default="", max_length=160)
     quantity: float = Field(gt=0, le=1_000_000_000)
     unit: str = Field(min_length=1, max_length=20)
     period: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
     activity_date: str | None = Field(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$")
     reporting_unit: str = Field(default="", max_length=120)
-    factor_id: str = Field(min_length=1, max_length=64)
+    factor_id: str | None = Field(default=None, min_length=1, max_length=64)
 
     @field_validator("category")
     @classmethod
@@ -455,17 +456,21 @@ def activities(
 def add_activity(request: ActivityRequest, http_request: Request) -> dict[str, object]:
     principal = current_principal(http_request)
     workspace_id = require_onboarding(principal)
-    factor = database.get_factor(request.factor_id, workspace_id)
-    if not factor:
-        raise HTTPException(status_code=404, detail="Emission factor not found.")
+    factor = database.get_factor(request.factor_id, workspace_id) if request.factor_id else None
     if request.activity_date and not request.activity_date.startswith(request.period + "-"):
         raise HTTPException(status_code=422, detail="Activity date must be within the selected reporting month.")
-    try:
-        emissions_kg = calculate_emissions_kg(
-            request.quantity, request.unit, request.category, factor
+    if factor:
+        try:
+            emissions_kg = calculate_emissions_kg(
+                request.quantity, request.unit, request.category, factor
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+    else:
+        factor = database.get_or_create_placeholder_factor(
+            workspace_id, request.category, request.unit
         )
-    except ValueError as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
+        emissions_kg = 0.0
     return database.save_activity(
         workspace_id,
         request.category,
@@ -495,6 +500,50 @@ def dashboard(
     selected_period = period or datetime.now().strftime("%Y-%m")
     workspace_id = require_onboarding(current_principal(request))
     return database.get_dashboard(workspace_id, selected_period)
+
+
+@app.get("/api/analytics/{metric}")
+def get_analytics(
+    metric: str,
+    http_request: Request,
+    period: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    category: str | None = Query(default=None),
+    department: str | None = Query(default=None, max_length=120),
+    months: int = Query(default=6, ge=1, le=24),
+    change_pct: float = Query(default=0, ge=-100, le=100),
+    switch_mode: str = Query(default="none", max_length=40),
+    add_solar_kwh: float = Query(default=0, ge=0, le=1000000000),
+) -> dict[str, object]:
+    workspace_id = require_onboarding(current_principal(http_request))
+    workspace = database.get_workspace(workspace_id) or {"id": workspace_id}
+    records = database.list_activities(workspace_id)
+    selected_period = period or datetime.now().strftime("%Y-%m")
+    valid_categories = {"electricity", "transport", "fuel", "waste"}
+    if category and category not in valid_categories:
+        raise HTTPException(status_code=422, detail="Invalid category filter.")
+
+    handlers = {
+        "summary": lambda: analytics_service.summary(records, workspace, selected_period, category, department),
+        "timeseries": lambda: analytics_service.monthly_series(records, selected_period, months, category, department),
+        "breakdown": lambda: analytics_service.breakdown(records, selected_period, category, department),
+        "top_contributors": lambda: analytics_service.top_contributors(records, selected_period, category, department),
+        "compare": lambda: analytics_service.compare(records, selected_period, category, department),
+        "forecast": lambda: analytics_service.forecast(records, selected_period, months, category, department),
+        "anomalies": lambda: analytics_service.anomalies(records, selected_period, category, department),
+        "what_if": lambda: analytics_service.what_if(records, selected_period, category, department, change_pct, switch_mode, add_solar_kwh),
+        "correlation": lambda: analytics_service.correlation(records, selected_period),
+        "heatmap": lambda: analytics_service.heatmap(records, selected_period, category, department),
+        "abatement": lambda: analytics_service.abatement(records, selected_period),
+        "pathway": lambda: analytics_service.pathway(records, workspace.get("monthly_target_kg"), selected_period),
+        "data_quality": lambda: analytics_service.data_quality(records),
+        "benchmark": lambda: analytics_service.benchmark(records, selected_period),
+    }
+    if metric not in handlers:
+        raise HTTPException(status_code=404, detail="Unknown analytics metric.")
+    response = handlers[metric]()
+    response.setdefault("meta", {})
+    response["meta"].update({"role": workspace.get("account_type", "individual"), "period": selected_period, "category": category, "department": department, "illustrative_demo_data": not bool(records), "cached_ttl_seconds": analytics_service.CACHE_TTL_SECONDS})
+    return response
 
 
 @app.put("/api/targets")

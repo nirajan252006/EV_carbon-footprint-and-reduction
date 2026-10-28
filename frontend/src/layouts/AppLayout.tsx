@@ -7,6 +7,7 @@ import {
   LogOut,
   Menu,
   Plus,
+  Target,
   X,
 } from "lucide-react";
 import { useState } from "react";
@@ -23,7 +24,7 @@ const sharedNav = {
 
 const navItemsByAccount = {
   individual: [sharedNav.dashboard, sharedNav.activity, { path: "analytics", label: "My analytics", icon: ChartNoAxesCombined }, { path: "recommendations", label: "Recommendations", icon: Leaf }, { path: "reports", label: "Reports", icon: FileStack }, { path: "profile", label: "My profile", icon: Plus }, sharedNav.assistant],
-  college: [sharedNav.dashboard, { path: "campus", label: "Campus profile", icon: Plus }, { path: "departments", label: "Departments", icon: FileStack }, { path: "activities", label: "Campus activities", icon: Plus }, { path: "analytics", label: "Campus analytics", icon: ChartNoAxesCombined }, { path: "recommendations", label: "Initiatives", icon: Leaf }, { path: "reports", label: "College reports", icon: FileStack }, { path: "settings", label: "Settings", icon: Plus }, sharedNav.assistant],
+  college: [sharedNav.dashboard, { path: "analytics", label: "Campus analytics", icon: ChartNoAxesCombined }, { path: "reduction-planner", label: "Carbon reduction planner", icon: Target }, sharedNav.assistant],
   organization: [sharedNav.dashboard, { path: "facilities", label: "Facilities", icon: Plus }, { path: "departments", label: "Departments", icon: FileStack }, { path: "activities", label: "Organization activities", icon: Plus }, { path: "analytics", label: "Analytics", icon: ChartNoAxesCombined }, { path: "recommendations", label: "Recommendations", icon: Leaf }, { path: "reports", label: "Management reports", icon: FileStack }, { path: "settings", label: "Settings", icon: Plus }, sharedNav.assistant],
 };
 
@@ -50,32 +51,18 @@ export function AppLayout() {
 
   return (
     <div className="min-h-screen bg-canvas">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-200 bg-white px-5 py-6 text-midnight lg:flex">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 flex-col border-r border-slate-200 bg-white px-4 py-6 text-midnight lg:flex">
         <Brand />
-        <p className="mb-3 mt-14 px-3 text-[10px] font-bold tracking-[0.18em] text-slate-400">WORKSPACE</p>
-        <nav className="grid gap-1" aria-label="Main navigation">
-          {navItems.map(({ path, label, icon: Icon }) => (
-            <NavLink
-              key={path}
-              to={`/${accountType}/${path}`}
-              className={({ isActive }) =>
-                `flex items-center gap-3 rounded-xl px-3 py-3 text-sm transition ${
-                  isActive ? "bg-ice font-medium text-leaf shadow-sm" : "text-slate-500 hover:bg-slate-50 hover:text-forest"
-                }`
-              }
-            >
-              <Icon className="h-4 w-4" aria-hidden="true" />
-              {label}
-            </NavLink>
-          ))}
+        <nav className="mt-10 min-h-0 flex-1 overflow-y-auto pr-1" aria-label="Main navigation">
+          <div className="grid gap-1">{navItems.map(({ path, label, icon: Icon }) => <NavLink key={path} to={`/${accountType}/${path}`} className={({ isActive }) => `flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${isActive ? "bg-ice font-semibold text-leaf shadow-sm" : "text-slate-500 hover:bg-slate-50 hover:text-forest"}`}><Icon className="h-4 w-4 shrink-0" aria-hidden="true" /><span>{label}</span></NavLink>)}</div>
         </nav>
-        <div className="mt-auto rounded-xl border border-lavender bg-lavender/35 p-3">
+        <div className="mt-3 shrink-0 rounded-xl border border-lavender bg-lavender/35 p-3">
           <div className="flex items-center gap-2 text-sm font-medium text-forest"><Leaf className="h-4 w-4 text-violet" /> Evidence first</div>
           <p className="mt-1 text-xs leading-5 text-slate-500">Every calculation keeps its factor source.</p>
         </div>
       </aside>
 
-      <div className="lg:pl-64">
+      <div className="lg:pl-72">
         <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-slate-200/80 bg-white/90 px-4 backdrop-blur-md sm:px-7">
           <div className="flex items-center gap-3">
             <button
@@ -103,12 +90,8 @@ export function AppLayout() {
         </header>
 
         {menuOpen && (
-          <nav className="absolute z-20 grid w-full gap-1 border-b border-slate-200 bg-white p-3 shadow-lg lg:hidden" aria-label="Mobile navigation">
-            {navItems.map(({ path, label, icon: Icon }) => (
-              <NavLink key={path} to={`/${accountType}/${path}`} onClick={() => setMenuOpen(false)} className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-slate-600 hover:bg-mint">
-                <Icon className="h-4 w-4" />{label}
-              </NavLink>
-            ))}
+          <nav className="absolute z-20 max-h-[calc(100vh-4rem)] w-full overflow-y-auto border-b border-slate-200 bg-white p-3 shadow-lg lg:hidden" aria-label="Mobile navigation">
+            {navItems.map(({ path, label, icon: Icon }) => <NavLink key={path} to={`/${accountType}/${path}`} onClick={() => setMenuOpen(false)} className={({ isActive }) => `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm ${isActive ? "bg-ice font-semibold text-leaf" : "text-slate-600 hover:bg-slate-50"}`}><Icon className="h-4 w-4" />{label}</NavLink>)}
           </nav>
         )}
 

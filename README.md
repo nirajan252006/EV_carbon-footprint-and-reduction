@@ -136,6 +136,12 @@ Knowledge assistant:
 Uploads accept PDF, TXT, and Markdown up to 10 MB. Image-only PDFs are not
 OCR'd. Duplicate content is detected by SHA-256.
 
+## Advanced analytics
+
+The role-aware advanced analytics page is available at `/<role>/analytics` for Individual, College and Organization workspaces. It provides trend, category, contributor, Pareto, treemap, heatmap, scenario, quality, anomaly and benchmark views with URL-synchronized period/category/department filters, CSV tables, fullscreen/chart actions, calculation inspection and print/PDF export.
+
+FastAPI analytics endpoints are exposed at `GET /api/analytics/{metric}`, where `metric` is `summary`, `timeseries`, `breakdown`, `top_contributors`, `compare`, `forecast`, `anomalies`, `what_if`, `correlation`, `heatmap`, `abatement`, `pathway`, `data_quality`, or `benchmark`. Supported filters are `period`, `category`, `department`, `months`, `change_pct`, `switch_mode`, and `add_solar_kwh`. All responses include role/period metadata, factor-name/version/source information, cache TTL metadata, and an illustrative-demo-data flag. Forecasts, scenarios, benchmarks and absent data integrations are explicitly labeled estimated or proposed.
+
 ## Verification
 
 ```powershell
