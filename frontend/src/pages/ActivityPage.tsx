@@ -29,7 +29,9 @@ function factorActivityUnit(factor: Factor) {
 
 function currentDate() {
   const date = new Date();
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate()
+  ).padStart(2, "0")}`;
 }
 
 export function ActivityPage() {
@@ -89,29 +91,33 @@ export function ActivityPage() {
           const nextUnit = compatibleUnits[0];
           const matches = result.filter((factor) => factorActivityUnit(factor) === nextUnit);
           setUnit(nextUnit);
-          if (matches.length === 1) setFactorId(matches[0].id);
+          if (matches.length === 1) {
+            setFactorId(matches[0].id);
+          }
         }
       })
       .catch((reason: unknown) => {
-        if (active) setError(reason instanceof Error ? reason.message : "Factors could not be loaded.");
+        if (!active) return;
+        setError(reason instanceof Error ? reason.message : "Emission factors could not be loaded.");
       })
       .finally(() => {
         if (active) setLoadingFactors(false);
       });
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [category]);
 
   async function handleSeedFactors() {
     setSeeding(true);
-    setSeedNotice(null);
     setError(null);
     try {
-      const res = await api.seedFactors();
-      setSeedNotice(res.message);
-      const updated = await api.getFactors(category);
-      setFactors(updated);
+      const seeded = await api.seedFactors();
+      setSeedNotice(`Standard emission factors initialized: ${seeded.seeded_factors_count} reference values ready.`);
+      const currentCategoryFactors = await api.getFactors(category);
+      setFactors(currentCategoryFactors);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not seed reference factors.");
+      setError(err instanceof Error ? err.message : "Failed to seed reference factors.");
     } finally {
       setSeeding(false);
     }
@@ -119,10 +125,10 @@ export function ActivityPage() {
 
   async function submitManual(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (saving || !saveEnabled) return;
+    if (!description.trim() || !quantity || Number(quantity) <= 0) return;
+    setSaving(true);
     setError(null);
     setSaved(null);
-    setSaving(true);
     try {
       const activity = await api.addActivity({
         category,
@@ -210,14 +216,14 @@ export function ActivityPage() {
   const saveEnabled = validQuantity && (!factors.length || factorId !== "");
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="mx-auto max-w-5xl space-y-6">
       <PageHeader
-        eyebrow="MEASUREMENT & INGESTION"
+        eyebrow="Measurement & Ingestion"
         title="Record carbon"
         highlight="emissions."
-        description="Log carbon emissions across Electricity, Transport, Fuel, and Waste with verified emission factor tracing, or extract electricity bills automatically."
+        description="Log carbon emissions across Electricity, Transport, Fuel, and Waste with verified emission factor tracing, or parse utility bills automatically via OCR."
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={handleSeedFactors}
@@ -225,8 +231,8 @@ export function ActivityPage() {
               className="btn-secondary text-xs"
               title="Initialize standard CEA Grid, EPA Fuel, DEFRA Transport, and WARM Waste factors"
             >
-              <Sparkles className="h-3.5 w-3.5 text-leaf" />
-              {seeding ? "Initializing…" : "Initialize Reference Factors"}
+              <Sparkles className="h-3.5 w-3.5 text-emerald-600 dark:text-ecogreen" />
+              <span>{seeding ? "Initializing…" : "Initialize Reference Factors"}</span>
             </button>
             <Link to={dashboardPath} className="btn-secondary text-xs">
               View Dashboard
@@ -236,59 +242,74 @@ export function ActivityPage() {
       />
 
       {seedNotice && (
-        <div className="mb-4 flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs font-medium text-emerald-900">
+        <div className="flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs font-medium text-emerald-900 dark:border-ecogreen/30 dark:bg-ecogreen/10 dark:text-ecogreen">
           <span>{seedNotice}</span>
-          <button onClick={() => setSeedNotice(null)} className="text-emerald-700 hover:text-emerald-900">
+          <button onClick={() => setSeedNotice(null)} className="text-emerald-700 hover:text-emerald-900 dark:text-ecogreen">
             <X className="h-4 w-4" />
           </button>
         </div>
       )}
 
-      {error && <div className="mb-4"><ErrorState message={error} /></div>}
+      {error && (
+        <div className="mb-4">
+          <ErrorState message={error} />
+        </div>
+      )}
 
-      {/* Mode Tabs */}
-      <div className="mb-6 flex border-b border-slate-200">
+      {/* Mode Navigation Tabs */}
+      <div className="flex border-b border-slate-200/80 dark:border-white/10">
         <button
           type="button"
           onClick={() => setActiveTab("manual")}
-          className={`flex items-center gap-2 border-b-2 px-6 py-3 text-sm font-semibold transition ${
+          className={`flex items-center gap-2 border-b-2 px-6 py-3.5 text-sm font-semibold transition-all ${
             activeTab === "manual"
-              ? "border-[#315C85] text-[#315C85]"
-              : "border-transparent text-slate-500 hover:text-slate-700"
+              ? "border-emerald-500 text-emerald-800 dark:border-ecogreen dark:text-ecogreen"
+              : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white"
           }`}
         >
-          <Calculator className="h-4 w-4" /> Manual Activity Entry
+          <Calculator className="h-4 w-4" />
+          <span>Manual Activity Entry</span>
         </button>
         <button
           type="button"
           onClick={() => setActiveTab("bill_ocr")}
-          className={`flex items-center gap-2 border-b-2 px-6 py-3 text-sm font-semibold transition ${
+          className={`flex items-center gap-2 border-b-2 px-6 py-3.5 text-sm font-semibold transition-all ${
             activeTab === "bill_ocr"
-              ? "border-[#315C85] text-[#315C85]"
-              : "border-transparent text-slate-500 hover:text-slate-700"
+              ? "border-emerald-500 text-emerald-800 dark:border-ecogreen dark:text-ecogreen"
+              : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white"
           }`}
         >
-          <FileUp className="h-4 w-4" /> Electricity Bill OCR Upload
+          <FileUp className="h-4 w-4" />
+          <span>Electricity Bill OCR Upload</span>
         </button>
       </div>
 
       {activeTab === "bill_ocr" ? (
         /* Bill OCR Upload Workflow */
-        <section className="grid gap-6 lg:grid-cols-[1fr_380px]">
-          <div className="surface-card p-6">
-            <div className="mb-4">
-              <h2 className="text-base font-bold text-slate-900">Electricity Bill Scanner & Parser</h2>
-              <p className="mt-1 text-xs text-slate-500">
-                Upload your utility electricity bill (PDF, JPG, PNG, TIFF, BMP up to 10 MB). The system detects billed units (kWh),
+        <section className="grid gap-6 lg:grid-cols-[1fr_390px]">
+          <div className="surface-card p-6 sm:p-7 dark:border-white/10 dark:bg-[#0D1B2A]/85">
+            <div className="mb-5">
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                Electricity Bill Scanner & Parser
+              </h2>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Upload your utility electricity bill (PDF, JPG, PNG up to 10 MB). The system detects billed units (kWh),
                 billing period, and isolates meter readings from tariffs.
               </p>
             </div>
 
-            {billError && <div className="mb-4"><ErrorState message={billError} /></div>}
+            {billError && (
+              <div className="mb-4">
+                <ErrorState message={billError} />
+              </div>
+            )}
 
             {/* Drag & Drop Zone */}
             <div
-              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOver(true);
+              }}
               onDragLeave={() => setDragOver(false)}
               onDrop={(e) => {
                 e.preventDefault();
@@ -296,10 +317,10 @@ export function ActivityPage() {
                 if (e.dataTransfer.files?.[0]) onBillFileSelected(e.dataTransfer.files[0]);
               }}
               onClick={() => fileInputRef.current?.click()}
-              className={`relative flex min-h-[180px] cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-6 text-center transition ${
+              className={`relative flex min-h-[200px] cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-6 text-center transition-all ${
                 dragOver
-                  ? "border-[#315C85] bg-[#EAF0F6]"
-                  : "border-slate-300 bg-slate-50 hover:border-slate-400 hover:bg-slate-100/60"
+                  ? "border-emerald-500 bg-emerald-500/10 dark:border-ecogreen dark:bg-ecogreen/15"
+                  : "border-slate-300 bg-white/50 hover:border-emerald-400 hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.02] dark:hover:border-ecogreen/40 dark:hover:bg-white/[0.04]"
               }`}
             >
               <input
@@ -311,42 +332,44 @@ export function ActivityPage() {
                   if (e.target.files?.[0]) onBillFileSelected(e.target.files[0]);
                 }}
               />
-              <div className="mb-2 grid h-12 w-12 place-items-center rounded-xl bg-white shadow-sm">
+              <div className="mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 text-emerald-600 dark:text-ecogreen border border-emerald-500/30">
                 {analyzingBill ? (
-                  <RefreshCw className="h-6 w-6 animate-spin text-[#315C85]" />
+                  <RefreshCw className="h-6 w-6 animate-spin" />
                 ) : (
-                  <Upload className="h-6 w-6 text-[#315C85]" />
+                  <Upload className="h-6 w-6" />
                 )}
               </div>
-              <p className="text-sm font-semibold text-slate-800">
+              <p className="text-sm font-semibold text-slate-800 dark:text-white">
                 {analyzingBill
-                  ? "Analyzing document & recognizing text…"
+                  ? "Analyzing document text & parsing kWh…"
                   : billFile
                   ? billFile.name
-                  : "Click to select or drag and drop your electricity bill"}
+                  : "Click to select or drag and drop your utility bill"}
               </p>
-              <p className="mt-1 text-xs text-slate-500">
-                Supports selectable digital PDFs, scanned bills, and images (up to 10 MB)
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Supports digital PDFs, scanned documents, and bill photos (up to 10 MB)
               </p>
             </div>
 
             {/* Extraction Results */}
             {billResult && (
-              <div className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+              <div className="mt-6 rounded-2xl border border-slate-200/80 bg-white/70 p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.02]">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3 dark:border-white/5">
                   <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                    <span className="text-sm font-bold text-slate-800">Extraction Results</span>
+                    <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-ecogreen" />
+                    <span className="text-sm font-bold text-slate-800 dark:text-white">
+                      Document Extraction Results
+                    </span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
-                    <span className="rounded-full bg-slate-100 px-2.5 py-0.5 font-medium text-slate-700">
+                    <span className="rounded-full bg-slate-100 px-2.5 py-0.5 font-medium text-slate-700 dark:bg-white/10 dark:text-slate-300">
                       Engine: {billResult.engine_used.replace(/_/g, " ")}
                     </span>
                     <span
                       className={`rounded-full px-2.5 py-0.5 font-bold ${
                         billResult.confidence >= 0.85
-                          ? "bg-emerald-50 text-emerald-700"
-                          : "bg-amber-50 text-amber-700"
+                          ? "bg-emerald-500/10 text-emerald-700 dark:bg-ecogreen/15 dark:text-ecogreen"
+                          : "bg-amber-500/10 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
                       }`}
                     >
                       {Math.round(billResult.confidence * 100)}% Confidence
@@ -355,17 +378,17 @@ export function ActivityPage() {
                 </div>
 
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                  <div className="rounded-lg bg-slate-50 p-3">
-                    <p className="text-xs text-slate-500">Extracted Billed Consumption</p>
-                    <p className="mt-1 text-lg font-bold text-slate-900">
+                  <div className="rounded-xl bg-slate-100/60 p-3.5 dark:bg-white/[0.03]">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Extracted Consumption</p>
+                    <p className="mt-1 text-xl font-bold text-slate-900 dark:text-white">
                       {billResult.extracted_consumption !== null
                         ? `${billResult.extracted_consumption} kWh`
-                        : "Ambiguous / Not Detected"}
+                        : "Ambiguous / Manual Entry Needed"}
                     </p>
                   </div>
-                  <div className="rounded-lg bg-slate-50 p-3">
-                    <p className="text-xs text-slate-500">Detected Billing Period</p>
-                    <p className="mt-1 text-lg font-bold text-slate-900">
+                  <div className="rounded-xl bg-slate-100/60 p-3.5 dark:bg-white/[0.03]">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Detected Period</p>
+                    <p className="mt-1 text-xl font-bold text-slate-900 dark:text-white">
                       {billResult.billing_period || "Current Month"}
                     </p>
                   </div>
@@ -373,8 +396,10 @@ export function ActivityPage() {
 
                 {billResult.evidence && billResult.evidence.length > 0 && (
                   <div className="mt-4">
-                    <p className="text-xs font-semibold text-slate-600">Evidence from Document Text:</p>
-                    <ul className="mt-1 space-y-1 rounded-lg bg-slate-50 p-3 text-xs text-slate-700 font-mono">
+                    <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      Evidence from Document Text:
+                    </p>
+                    <ul className="mt-1.5 space-y-1 rounded-xl bg-slate-100/60 p-3 text-xs text-slate-700 font-mono dark:bg-black/30 dark:text-slate-300">
                       {billResult.evidence.map((snippet, idx) => (
                         <li key={idx} className="truncate">
                           • {snippet}
@@ -388,9 +413,9 @@ export function ActivityPage() {
           </div>
 
           {/* Confirmation Form */}
-          <div className="surface-card p-6">
-            <h3 className="text-sm font-bold text-slate-900">Verify & Save Emissions</h3>
-            <p className="mt-1 text-xs text-slate-500">
+          <div className="surface-card p-6 sm:p-7 dark:border-white/10 dark:bg-[#0D1B2A]/85">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Verify & Save Emissions</h3>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               Review and adjust the extracted figures before recording to the ledger.
             </p>
 
@@ -443,13 +468,17 @@ export function ActivityPage() {
               </label>
 
               {billSavedActivity && (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs text-emerald-900">
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs text-emerald-900 dark:border-ecogreen/30 dark:bg-ecogreen/15 dark:text-ecogreen">
                   <p className="font-bold text-sm">Calculation Recorded!</p>
                   <p className="mt-1">
-                    {billSavedActivity.quantity} kWh × {billSavedActivity.factor_value} {billSavedActivity.factor_unit} ={" "}
+                    {billSavedActivity.quantity} kWh × {billSavedActivity.factor_value}{" "}
+                    {billSavedActivity.factor_unit} ={" "}
                     <strong>{billSavedActivity.emissions_kg.toFixed(2)} kg CO₂e</strong>
                   </p>
-                  <Link to={dashboardPath} className="mt-2 inline-block font-semibold text-blue-700 underline">
+                  <Link
+                    to={dashboardPath}
+                    className="mt-2 inline-block font-semibold text-emerald-700 underline dark:text-ecogreen"
+                  >
                     View on Dashboard →
                   </Link>
                 </div>
@@ -467,20 +496,20 @@ export function ActivityPage() {
         </section>
       ) : (
         /* Manual Activity Entry Workflow */
-        <section className="surface-card p-6">
+        <section className="surface-card p-6 sm:p-7 dark:border-white/10 dark:bg-[#0D1B2A]/85">
           <form onSubmit={submitManual} className="space-y-6">
             <div>
-              <label className="form-label">Emissions Category</label>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <label className="form-label mb-2">Emissions Category</label>
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
                 {categories.map((item) => (
                   <button
                     key={item.value}
                     type="button"
                     onClick={() => setCategory(item.value)}
-                    className={`rounded-xl border p-3 text-center text-xs font-semibold transition ${
+                    className={`rounded-xl border p-3 text-center text-xs font-semibold transition-all ${
                       category === item.value
-                        ? "border-[#315C85] bg-[#EAF0F6] text-[#315C85]"
-                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        ? "border-emerald-500 bg-emerald-500/10 text-emerald-800 shadow-sm dark:border-ecogreen dark:bg-ecogreen/15 dark:text-ecogreen"
+                        : "border-slate-200 bg-white/70 text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-300 dark:hover:bg-white/[0.06]"
                     }`}
                   >
                     {item.label}
@@ -503,7 +532,12 @@ export function ActivityPage() {
 
               <label className="form-label">
                 Reporting Month
-                <input className="form-input bg-slate-50 text-slate-500" type="text" readOnly value={period} />
+                <input
+                  className="form-input bg-slate-100/60 text-slate-500 dark:bg-white/5 dark:text-slate-400"
+                  type="text"
+                  readOnly
+                  value={period}
+                />
               </label>
             </div>
 
@@ -519,8 +553,10 @@ export function ActivityPage() {
               />
             </label>
 
-            <div className="border-t border-slate-100 pt-5">
-              <h3 className="mb-4 text-sm font-semibold text-slate-800">Measurement</h3>
+            <div className="border-t border-slate-100 pt-5 dark:border-white/5">
+              <h3 className="mb-4 text-sm font-semibold text-slate-800 dark:text-white">
+                Measurement & Metrics
+              </h3>
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="form-label">
                   Quantity *
@@ -536,7 +572,9 @@ export function ActivityPage() {
                     placeholder="Enter positive amount"
                   />
                   {quantity !== "" && !validQuantity && (
-                    <span className="mt-1 text-xs font-normal text-red-600">Enter a positive quantity.</span>
+                    <span className="mt-1 text-xs font-normal text-rose-600 dark:text-rose-400">
+                      Enter a positive quantity.
+                    </span>
                   )}
                 </label>
                 <label className="form-label">
@@ -561,7 +599,12 @@ export function ActivityPage() {
                       ))}
                     </select>
                   ) : (
-                    <select className="form-input bg-slate-50" value="" disabled aria-label="Choose a unit">
+                    <select
+                      className="form-input bg-slate-100 dark:bg-white/5"
+                      value=""
+                      disabled
+                      aria-label="Choose a unit"
+                    >
                       <option value="">No factor units available</option>
                     </select>
                   )}
@@ -579,14 +622,16 @@ export function ActivityPage() {
               </label>
             </div>
 
-            <div className="border-t border-slate-100 pt-5">
+            <div className="border-t border-slate-100 pt-5 dark:border-white/5">
               <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-800">Emission Factor</h3>
+                <h3 className="text-sm font-semibold text-slate-800 dark:text-white">
+                  Documented Emission Factor
+                </h3>
                 {factors.length === 0 && !loadingFactors && (
                   <button
                     type="button"
                     onClick={handleSeedFactors}
-                    className="text-xs font-semibold text-blue-700 underline"
+                    className="text-xs font-semibold text-emerald-600 underline dark:text-ecogreen"
                   >
                     Seed standard factor set
                   </button>
@@ -595,12 +640,12 @@ export function ActivityPage() {
               {loadingFactors ? (
                 <p className="text-sm text-slate-500">Loading verified factors…</p>
               ) : factors.length === 0 ? (
-                <p className="text-sm text-amber-700">
+                <p className="text-sm text-amber-700 dark:text-amber-400">
                   No emission factors configured for {category}. Click "Initialize Reference Factors" above.
                 </p>
               ) : (
                 <label className="form-label">
-                  Documented Emission Factor
+                  Factor Definition
                   <select
                     className="form-input"
                     required
@@ -620,8 +665,8 @@ export function ActivityPage() {
                 </label>
               )}
               {selectedFactor && (
-                <div className="mt-3 rounded-lg bg-slate-50 px-3 py-3 text-xs leading-5 text-slate-600">
-                  <p className="font-semibold text-slate-700">{selectedFactor.name}</p>
+                <div className="mt-3 rounded-xl bg-slate-100/70 p-3.5 text-xs leading-5 text-slate-600 dark:bg-white/[0.03] dark:text-slate-300">
+                  <p className="font-bold text-slate-800 dark:text-white">{selectedFactor.name}</p>
                   <p>
                     Source: {selectedFactor.source_name} · Year: {selectedFactor.factor_year} · Region:{" "}
                     {selectedFactor.region}
@@ -629,48 +674,64 @@ export function ActivityPage() {
                   <p>Unit: {selectedFactor.unit}</p>
                   {selectedFactor.source_url && (
                     <a
-                      className="font-medium text-blue-700 underline"
+                      className="font-semibold text-emerald-600 underline dark:text-ecogreen"
                       href={selectedFactor.source_url}
                       target="_blank"
                       rel="noreferrer"
                     >
-                      View factor source
+                      View authoritative source
                     </a>
                   )}
                 </div>
               )}
             </div>
 
-            <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Estimated Emissions</p>
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 dark:border-ecogreen/20 dark:bg-ecogreen/5">
+              <p className="text-xs font-bold uppercase tracking-wide text-emerald-700 dark:text-ecogreen">
+                Estimated Calculated Emissions
+              </p>
               {previewValid && previewEmissions !== null ? (
                 <>
-                  <p className="mt-1 text-lg font-bold text-slate-900">{previewEmissions.toFixed(2)} kg CO₂e</p>
-                  <p className="mt-1 text-xs text-slate-600">
+                  <p className="mt-1 text-xl font-black text-slate-900 dark:text-white">
+                    {previewEmissions.toFixed(2)} kg CO₂e
+                  </p>
+                  <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
                     Source: {selectedFactor?.source_name} · Year: {selectedFactor?.factor_year}
                   </p>
-                  <p className="mt-1 text-[11px] text-slate-500">Deterministic result: {numQuantity} {unit} × {selectedFactor?.value} {selectedFactor?.unit}</p>
+                  <p className="mt-1 text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                    Formula: {numQuantity} {unit} × {selectedFactor?.value} {selectedFactor?.unit}
+                  </p>
                 </>
               ) : (
-                <p className="mt-1 text-sm text-slate-600">Select a verified factor and enter a quantity to preview.</p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Select a verified factor and enter a quantity to preview calculated emissions.
+                </p>
               )}
             </div>
 
             {saved && (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-                <p className="font-semibold">Activity saved successfully.</p>
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-900 dark:border-ecogreen/30 dark:bg-ecogreen/15 dark:text-ecogreen">
+                <p className="font-bold">Activity saved successfully into persistent ledger.</p>
                 <p className="mt-1">
                   {saved.quantity} {saved.unit} × {saved.factor_value} {saved.factor_unit} ={" "}
                   <strong>{saved.emissions_kg.toFixed(2)} kg CO₂e</strong>
                 </p>
-                <Link to={dashboardPath} className="mt-2 inline-block font-semibold text-blue-700 underline">
-                  View dashboard
+                <Link
+                  to={dashboardPath}
+                  className="mt-2 inline-block font-semibold text-emerald-700 underline dark:text-ecogreen"
+                >
+                  View on Dashboard →
                 </Link>
               </div>
             )}
 
-            <button type="submit" className="btn-primary justify-center" disabled={!saveEnabled || saving}>
-              {saving ? "Saving activity…" : "Calculate and save activity"} <ArrowRight className="h-4 w-4" />
+            <button
+              type="submit"
+              className="btn-primary justify-center"
+              disabled={!saveEnabled || saving}
+            >
+              {saving ? "Calculating & Saving…" : "Calculate and Save Activity"}
+              <ArrowRight className="h-4 w-4" />
             </button>
           </form>
         </section>

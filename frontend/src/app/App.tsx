@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { MotionConfig } from "framer-motion";
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useParams } from "react-router-dom";
 import { ErrorState, LoadingState } from "../components/Feedback";
+import { ThemeProvider } from "../context/ThemeContext";
 import { useWorkspace, WorkspaceProvider } from "../hooks/WorkspaceContext";
 import { AppLayout } from "../layouts/AppLayout";
 import { AccountSelectionPage } from "../pages/AccountSelectionPage";
@@ -32,7 +33,8 @@ function isAccountType(value: string | undefined): value is AccountType {
 
 export default function App() {
   return (
-    <MotionConfig reducedMotion="user">
+    <ThemeProvider>
+      <MotionConfig reducedMotion="user">
       <BrowserRouter>
         <WorkspaceProvider>
           <Suspense fallback={<LoadingState />}>
@@ -73,6 +75,7 @@ export default function App() {
         </WorkspaceProvider>
       </BrowserRouter>
     </MotionConfig>
+    </ThemeProvider>
   );
 }
 

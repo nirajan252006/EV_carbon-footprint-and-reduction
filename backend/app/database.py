@@ -776,7 +776,7 @@ def register_or_get_iot_device(
     token = device_token or str(uuid.uuid4())
     with connect() as connection:
         row = connection.execute(
-            "SELECT * FROM iot_devices WHERE device_id = ?",
+            "SELECT * FROM iot_devices WHERE device_id = ? AND workspace_id = ?",
             (device_id, workspace_id),
         ).fetchone()
         if row:

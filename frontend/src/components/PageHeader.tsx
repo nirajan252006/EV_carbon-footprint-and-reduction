@@ -16,22 +16,27 @@ export function PageHeader({
 }) {
   return (
     <motion.header
-      initial={{ opacity: 0, y: 16 }}
+      initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.28, ease: "easeOut" }}
-      className="mb-7 flex flex-wrap items-end justify-between gap-5"
+      transition={{ duration: 0.25, ease: "easeOut" }}
+      className="mb-8 flex flex-wrap items-end justify-between gap-5"
     >
       <div>
-        <p className="mb-3 flex items-center gap-2 text-[10px] font-bold tracking-[0.18em] text-[#315C85]">
-          <span className="h-2 w-2 rounded-full bg-[#315C85] shadow-[0_0_0_4px_rgba(49,92,133,0.12)]" />
-          {eyebrow}
-        </p>
-        <h1 className="text-3xl font-semibold leading-tight tracking-[-0.04em] text-[#18263A] sm:text-4xl">
-          {title} <span className="text-[#315C85]">{highlight}</span>
+        <div className="mb-2.5 inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-[10px] font-bold tracking-[0.18em] text-emerald-700 dark:border-ecogreen/30 dark:bg-ecogreen/15 dark:text-ecogreen">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 dark:bg-ecogreen animate-pulse" />
+          <span>{eyebrow.toUpperCase()}</span>
+        </div>
+        <h1 className="text-3xl font-extrabold leading-tight tracking-tight text-slate-800 dark:text-white sm:text-4xl">
+          {title}{" "}
+          <span className="bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 bg-clip-text text-transparent dark:from-ecogreen dark:via-ecocyan dark:to-ecoblue">
+            {highlight}
+          </span>
         </h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">{description}</p>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+          {description}
+        </p>
       </div>
-      {action}
+      {action && <div className="flex items-center gap-3">{action}</div>}
     </motion.header>
   );
 }
