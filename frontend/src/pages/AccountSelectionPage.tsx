@@ -46,9 +46,10 @@ export function AccountSelectionPage() {
         {accounts.map(({ type, name, description, icon: Icon, features }, index) => (
           <motion.section
             key={type}
-            initial={reduceMotion ? false : { opacity: 0, y: 10 }}
+            initial={reduceMotion ? false : { opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: reduceMotion ? 0 : 0.2, delay: reduceMotion ? 0 : index * 0.05 }}
+            whileHover={reduceMotion ? undefined : { y: -4, scale: 1.01 }}
+            transition={{ duration: reduceMotion ? 0 : 0.22, delay: reduceMotion ? 0 : index * 0.05, ease: "easeOut" }}
             className="surface-card flex min-h-full flex-col p-5 sm:p-6"
             aria-labelledby={`account-${type}`}
           >

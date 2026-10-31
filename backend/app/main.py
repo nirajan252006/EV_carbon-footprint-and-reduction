@@ -21,7 +21,11 @@ from starlette.concurrency import run_in_threadpool
 
 from . import database
 from .auth import hash_password, hash_token, new_session_token, verify_password
-from .carbon import calculate_emissions_kg
+from .carbon import calculate_emissions_kg, calculate_activity_carbon, REFERENCE_FACTORS
+from . import bill_ocr
+from . import iot as iot_service
+from . import explainable_ai
+from fastapi.middleware.cors import CORSMiddleware
 from . import analytics as analytics_service
 from .config import (
     COOKIE_SECURE,
@@ -46,10 +50,25 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="GreenTrack Carbon Platform", lifespan=lifespan)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "http://localhost:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 PUBLIC_API = {
     ("GET", "/api/health"),
     ("POST", "/api/auth/register"),
     ("POST", "/api/auth/login"),
+    ("POST", "/api/iot/readings"),
 }
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
@@ -73,10 +92,24 @@ async def authenticate_api_requests(request: Request, call_next):
     if (request.method, request.url.path) in PUBLIC_API:
         return await call_next(request)
 
+    # Allow IoT ingestion via device token or session
+    if request.url.path == "/api/iot/readings" and request.method == "POST":
+        device_token = request.headers.get("X-Device-Token") or request.headers.get("Authorization", "").replace("Bearer ", "")
+        if device_token:
+            request.state.device_token = device_token
+            return await call_next(request)
+        if session:
+            return await call_next(request)
+        # If no session and no device token, allow device registration/ingestion with default device header
+        device_id_hdr = request.headers.get("X-Device-Id")
+        if device_id_hdr:
+            request.state.device_id_hdr = device_id_hdr
+            return await call_next(request)
+
     if not session:
         return JSONResponse(status_code=401, content={"detail": "Sign in to continue."})
 
-    if request.method in UNSAFE_METHODS:
+    if request.method in UNSAFE_METHODS and request.url.path != "/api/iot/readings":
         csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME, "")
         csrf_header = request.headers.get("X-CSRF-Token", "")
         if (
@@ -382,9 +415,17 @@ def service(workspace_id: str) -> RagService:
 def health(request: Request) -> dict[str, object]:
     principal = getattr(request.state, "principal", None)
     workspace_id = str(principal["workspace_id"]) if principal else None
+    ocr_info = bill_ocr.get_ocr_engine_info()
+    active_iot = len(database.list_iot_devices(workspace_id)) if workspace_id else 0
     return {
         "status": "ok",
+        "database": "connected",
         "ai_provider_configured": bool(OPENAI_API_KEY),
+        "ocr_available": bool(ocr_info["pymupdf_available"] or ocr_info["pypdf_available"]),
+        "ocr_engine": "tesseract" if ocr_info["tesseract_installed"] else ("pdf_text_extractor" if ocr_info["pymupdf_available"] else "none"),
+        "tesseract_installed": ocr_info["tesseract_installed"],
+        "iot_configured": active_iot > 0,
+        "iot_active_devices": active_iot,
         "indexed_documents": database.count_documents(workspace_id) if workspace_id else 0,
         "workspace_configured": bool(principal and principal["onboarding_complete"]),
     }
@@ -457,6 +498,11 @@ def add_activity(request: ActivityRequest, http_request: Request) -> dict[str, o
     principal = current_principal(http_request)
     workspace_id = require_onboarding(principal)
     factor = database.get_factor(request.factor_id, workspace_id) if request.factor_id else None
+    if not factor and not request.factor_id:
+        workspace_factors = database.list_factors(workspace_id, request.category)
+        matching = [f for f in workspace_factors if f["unit"].endswith("/" + request.unit) and f["value"] > 0]
+        if matching:
+            factor = matching[0]
     if request.activity_date and not request.activity_date.startswith(request.period + "-"):
         raise HTTPException(status_code=422, detail="Activity date must be within the selected reporting month.")
     if factor:
@@ -769,6 +815,343 @@ def chat(request: ChatRequest, http_request: Request) -> dict[str, object]:
         raise
 
 
+# --- Bill OCR & Electricity Calculation ---
+
+class ElectricityCalculateRequest(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
+    quantity: float = Field(gt=0, le=1_000_000_000)
+    period: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+    activity_date: str | None = Field(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$")
+    description: str = Field(default="Electricity bill consumption", max_length=160)
+    reporting_unit: str = Field(default="", max_length=120)
+    factor_id: str | None = Field(default=None, max_length=64)
+
+
+class ReductionGoalRequest(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
+    title: str = Field(min_length=2, max_length=160)
+    category: str | None = Field(default=None)
+    baseline_period: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+    baseline_emissions_kg: float = Field(ge=0, le=1_000_000_000)
+    target_reduction_pct: float = Field(gt=0, le=100)
+    target_period: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+class ReductionGoalStatusRequest(BaseModel):
+    status: str = Field(pattern=r"^(active|achieved|missed|cancelled)$")
+
+
+class IotSimulateRequest(BaseModel):
+    device_id: str = Field(default="esp32-energy-01", max_length=64)
+    power_w: float | None = Field(default=None, ge=0, le=50000)
+
+
+@app.post("/api/electricity/analyze-bill")
+async def analyze_electricity_bill(
+    request: Request,
+    file: UploadFile = File(...),
+) -> dict[str, object]:
+    principal = current_principal(request)
+    require_onboarding(principal)
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="A bill file is required.")
+    
+    ext = Path(file.filename).suffix.lower()
+    allowed_exts = {".pdf", ".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp"}
+    if ext not in allowed_exts:
+        raise HTTPException(status_code=415, detail="Upload a PDF, JPG, PNG, TIFF, or BMP electricity bill.")
+
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Bill file exceeds the 10 MB limit.")
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    return await run_in_threadpool(bill_ocr.analyze_bill_document, file.filename, content)
+
+
+@app.post("/api/electricity/calculate", status_code=201)
+def calculate_electricity_bill(
+    request: ElectricityCalculateRequest,
+    http_request: Request,
+) -> dict[str, object]:
+    principal = current_principal(http_request)
+    workspace_id = require_onboarding(principal)
+
+    if request.activity_date and not request.activity_date.startswith(request.period + "-"):
+        raise HTTPException(status_code=422, detail="Activity date must be within the billing month.")
+
+    # Match factor
+    factor = None
+    if request.factor_id:
+        factor = database.get_factor(request.factor_id, workspace_id)
+    if not factor:
+        factors = database.list_factors(workspace_id, "electricity")
+        if factors:
+            factor = factors[0]
+
+    if factor:
+        try:
+            emissions_kg = calculate_emissions_kg(request.quantity, "kWh", "electricity", factor)
+        except ValueError as err:
+            raise HTTPException(status_code=422, detail=str(err)) from err
+    else:
+        factor = database.get_or_create_placeholder_factor(workspace_id, "electricity", "kWh")
+        emissions_kg = 0.0
+
+    return database.save_activity(
+        workspace_id=workspace_id,
+        category="electricity",
+        description=request.description.strip(),
+        quantity=request.quantity,
+        unit="kWh",
+        period=request.period,
+        activity_date=request.activity_date,
+        reporting_unit=request.reporting_unit.strip(),
+        factor=factor,
+        emissions_kg=emissions_kg,
+        data_origin="ocr_bill",
+    )
+
+
+# --- IoT Household Monitoring ---
+
+@app.post("/api/iot/readings", status_code=201)
+def ingest_iot_reading(
+    reading: iot_service.IotReadingRequest,
+    request: Request,
+) -> dict[str, object]:
+    # Determine workspace
+    principal = getattr(request.state, "principal", None)
+    workspace_id = None
+    if principal:
+        workspace_id = str(principal["workspace_id"])
+    else:
+        # Check if device is already registered
+        dev = database.get_iot_device(reading.device_id)
+        if dev:
+            workspace_id = str(dev["workspace_id"])
+        else:
+            # Associate with the primary workspace in the system
+            legacy = database.get_workspace(None)
+            if legacy:
+                workspace_id = legacy["id"]
+            else:
+                raise HTTPException(status_code=400, detail="No workspace registered to associate IoT device.")
+
+    # Register device if not exists
+    database.register_or_get_iot_device(
+        workspace_id=workspace_id,
+        device_id=reading.device_id,
+        device_name=f"Power Sensor {reading.device_id[-4:]}",
+        device_token=getattr(request.state, "device_token", None),
+    )
+
+    saved = database.save_iot_reading(
+        device_id=reading.device_id,
+        workspace_id=workspace_id,
+        voltage=reading.voltage,
+        current=reading.current,
+        power=reading.power,
+        energy_kwh=reading.energy_kwh,
+        temperature=reading.temperature,
+        humidity=reading.humidity,
+        is_simulated=reading.is_simulated,
+        timestamp=reading.timestamp,
+    )
+    health_status = iot_service.get_device_health(saved["recorded_at"])
+    return {
+        "status": "success",
+        "reading": saved,
+        "device_health": health_status,
+    }
+
+
+@app.get("/api/iot/latest")
+def get_latest_iot(
+    request: Request,
+    device_id: str | None = Query(default=None),
+) -> dict[str, object]:
+    workspace_id = require_onboarding(current_principal(request))
+    latest = database.get_latest_iot_reading(workspace_id, device_id)
+    devices = database.list_iot_devices(workspace_id)
+    health_status = iot_service.get_device_health(latest["recorded_at"] if latest else None)
+    return {
+        "latest_reading": latest,
+        "device_health": health_status,
+        "devices": devices,
+    }
+
+
+@app.get("/api/iot/history")
+def get_iot_history(
+    request: Request,
+    device_id: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=1000),
+    hours: int | None = Query(default=24, ge=1, le=720),
+) -> dict[str, object]:
+    workspace_id = require_onboarding(current_principal(request))
+    readings = database.list_iot_readings(workspace_id, device_id, limit, hours)
+    energy_calc = iot_service.calculate_energy_consumption(readings)
+    return {
+        "device_id": device_id,
+        "sample_count": len(readings),
+        "period_hours": hours,
+        "energy_consumption_kwh": energy_calc["total_consumption_kwh"],
+        "readings": readings,
+    }
+
+
+@app.get("/api/iot/summary")
+def get_iot_summary(
+    request: Request,
+    device_id: str | None = Query(default=None),
+    period: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+) -> dict[str, object]:
+    workspace_id = require_onboarding(current_principal(request))
+    selected_period = period or datetime.now().strftime("%Y-%m")
+    readings = database.list_iot_readings(workspace_id, device_id, limit=5000)
+    period_readings = [r for r in readings if str(r["recorded_at"]).startswith(selected_period)]
+
+    consumption = iot_service.calculate_energy_consumption(period_readings)
+    daily = iot_service.aggregate_daily_iot_energy(period_readings)
+
+    # Estimate emissions using workspace electricity factor
+    factors = database.list_factors(workspace_id, "electricity")
+    factor = factors[0] if factors else None
+    emissions_kg = 0.0
+    if factor:
+        try:
+            emissions_kg = calculate_emissions_kg(consumption["total_consumption_kwh"], "kWh", "electricity", factor)
+        except ValueError:
+            pass
+
+    return {
+        "period": selected_period,
+        "total_consumption_kwh": consumption["total_consumption_kwh"],
+        "estimated_emissions_kg": round(emissions_kg, 4),
+        "factor_applied": factor,
+        "daily_breakdown": daily,
+        "sample_count": len(period_readings),
+        "resets_detected": consumption["resets_detected"],
+    }
+
+
+@app.post("/api/iot/simulate")
+def simulate_iot_reading(
+    req: IotSimulateRequest,
+    request: Request,
+) -> dict[str, object]:
+    principal = current_principal(request)
+    workspace_id = require_onboarding(principal)
+    dev_id = req.device_id or "esp32-household-01"
+
+    database.register_or_get_iot_device(
+        workspace_id=workspace_id,
+        device_id=dev_id,
+        device_name=f"Smart Energy Monitor ({dev_id})",
+        location="Main Household Meter",
+    )
+
+    latest = database.get_latest_iot_reading(workspace_id, dev_id)
+    prev_kwh = latest["energy_kwh"] if latest else 125.4
+
+    # Simulate realistic live electrical readings
+    voltage = 230.5
+    power = req.power_w if req.power_w is not None else 850.0
+    current = round(power / voltage, 2)
+    # Increment cumulative kWh by ~0.05 kWh
+    new_kwh = round(prev_kwh + 0.05, 4)
+
+    reading = database.save_iot_reading(
+        device_id=dev_id,
+        workspace_id=workspace_id,
+        voltage=voltage,
+        current=current,
+        power=power,
+        energy_kwh=new_kwh,
+        temperature=26.8,
+        humidity=53.0,
+        is_simulated=True,
+    )
+    health_status = iot_service.get_device_health(reading["recorded_at"])
+    return {
+        "status": "simulated",
+        "reading": reading,
+        "device_health": health_status,
+        "note": "Simulated hardware reading for demonstration and testing.",
+    }
+
+
+# --- Explainable AI Carbon Intelligence ---
+
+@app.get("/api/explainable-ai")
+def get_explainable_ai(
+    request: Request,
+    period: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+) -> dict[str, object]:
+    workspace_id = require_onboarding(current_principal(request))
+    selected_period = period or datetime.now().strftime("%Y-%m")
+    workspace = database.get_workspace(workspace_id) or {"name": "Workspace", "id": workspace_id}
+    dashboard_data = database.get_dashboard(workspace_id, selected_period)
+    activities = database.list_activities(workspace_id, selected_period)
+
+    return explainable_ai.generate_explainable_intelligence(
+        workspace=workspace,
+        period=selected_period,
+        dashboard_data=dashboard_data,
+        activities=activities,
+    )
+
+
+# --- Reduction Goals ---
+
+@app.get("/api/goals")
+def list_goals(request: Request) -> list[dict[str, object]]:
+    workspace_id = require_onboarding(current_principal(request))
+    return database.list_reduction_goals(workspace_id)
+
+
+@app.post("/api/goals", status_code=201)
+def create_goal(
+    goal_req: ReductionGoalRequest,
+    request: Request,
+) -> dict[str, object]:
+    workspace_id = require_onboarding(current_principal(request))
+    target_kg = round(goal_req.baseline_emissions_kg * (1.0 - (goal_req.target_reduction_pct / 100.0)), 2)
+    return database.create_reduction_goal(
+        workspace_id=workspace_id,
+        title=goal_req.title.strip(),
+        category=goal_req.category,
+        baseline_period=goal_req.baseline_period,
+        baseline_emissions_kg=goal_req.baseline_emissions_kg,
+        target_reduction_pct=goal_req.target_reduction_pct,
+        target_emissions_kg=target_kg,
+        target_period=goal_req.target_period,
+    )
+
+
+@app.patch("/api/goals/{goal_id}/status")
+def update_goal_status(
+    goal_id: str,
+    status_req: ReductionGoalStatusRequest,
+    request: Request,
+) -> dict[str, object]:
+    workspace_id = require_onboarding(current_principal(request))
+    if not database.update_reduction_goal_status(goal_id, workspace_id, status_req.status):
+        raise HTTPException(status_code=404, detail="Reduction goal not found.")
+    return {"id": goal_id, "status": status_req.status}
+
+
+@app.post("/api/factors/seed", status_code=201)
+def seed_factors(request: Request) -> dict[str, object]:
+    workspace_id = require_onboarding(current_principal(request))
+    count = database.seed_reference_factors_if_empty(workspace_id)
+    return {"seeded_factors_count": count, "message": f"{count} reference emission factors initialized."}
+
+
 FRONTEND_DIST = ROOT_DIR / "frontend" / "dist"
 FRONTEND_ASSETS = FRONTEND_DIST / "assets"
 if FRONTEND_ASSETS.is_dir():
@@ -791,3 +1174,5 @@ def frontend_route(frontend_path: str) -> Response:
     if frontend_path == "api" or frontend_path.startswith("api/"):
         raise HTTPException(status_code=404, detail="API endpoint not found.")
     return index()
+
+

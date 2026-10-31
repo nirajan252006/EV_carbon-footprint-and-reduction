@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 import json
 import sqlite3
 import uuid
@@ -117,8 +118,49 @@ def initialize_database() -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
             CREATE INDEX IF NOT EXISTS idx_activities_period ON activities(period);
+            CREATE TABLE IF NOT EXISTS iot_devices (
+                device_id TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+                device_name TEXT NOT NULL,
+                device_token TEXT NOT NULL,
+                location TEXT NOT NULL DEFAULT '',
+                last_seen_at TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS iot_readings (
+                id TEXT PRIMARY KEY,
+                device_id TEXT NOT NULL REFERENCES iot_devices(device_id) ON DELETE CASCADE,
+                workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+                voltage REAL NOT NULL,
+                current REAL NOT NULL,
+                power REAL NOT NULL,
+                energy_kwh REAL NOT NULL,
+                temperature REAL,
+                humidity REAL,
+                is_simulated INTEGER NOT NULL DEFAULT 0,
+                recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_iot_readings_device_time
+                ON iot_readings(device_id, recorded_at);
+            CREATE INDEX IF NOT EXISTS idx_iot_readings_workspace
+                ON iot_readings(workspace_id, recorded_at);
+            CREATE TABLE IF NOT EXISTS reduction_goals (
+                id TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+                title TEXT NOT NULL,
+                category TEXT,
+                baseline_period TEXT NOT NULL,
+                baseline_emissions_kg REAL NOT NULL,
+                target_reduction_pct REAL NOT NULL,
+                target_emissions_kg REAL NOT NULL,
+                target_period TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'achieved', 'missed', 'cancelled')),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_goals_workspace ON reduction_goals(workspace_id);
             """
         )
+        _add_column(connection, 'activities', 'data_origin', "TEXT NOT NULL DEFAULT 'manual'")
         _add_column(connection, "workspace", "onboarding_complete", "INTEGER NOT NULL DEFAULT 0")
         _add_column(connection, "emission_factors", "workspace_id", "TEXT")
         _add_column(connection, "activities", "workspace_id", "TEXT")
@@ -479,6 +521,7 @@ def save_activity(
     reporting_unit: str,
     factor: dict[str, Any],
     emissions_kg: float,
+    data_origin: str = "manual",
 ) -> dict[str, Any]:
     activity_id = str(uuid.uuid4())
     with connect() as connection:
@@ -487,15 +530,15 @@ def save_activity(
             INSERT INTO activities (
                 id, workspace_id, category, description, quantity, unit, period, activity_date, reporting_unit,
                 factor_id, factor_name, factor_value, factor_unit, factor_source,
-                factor_source_url, factor_year, factor_region, assumptions, emissions_kg
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                factor_source_url, factor_year, factor_region, assumptions, emissions_kg, data_origin
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 activity_id, workspace_id, category, description, quantity, unit, period,
                 activity_date or f"{period}-01", reporting_unit, factor["id"], factor["name"], factor["value"],
                 factor["unit"], factor["source_name"], factor["source_url"],
                 factor["factor_year"], factor["region"], factor["assumptions"],
-                emissions_kg,
+                emissions_kg, data_origin,
             ),
         )
         row = connection.execute(
@@ -719,3 +762,215 @@ def search_chunks(
         }
         for row in rows
     ]
+
+
+# --- IoT & Reduction Goals & Reference Factors ---
+
+def register_or_get_iot_device(
+    workspace_id: str,
+    device_id: str,
+    device_name: str,
+    device_token: str | None = None,
+    location: str = "",
+) -> dict[str, Any]:
+    token = device_token or str(uuid.uuid4())
+    with connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM iot_devices WHERE device_id = ?",
+            (device_id, workspace_id),
+        ).fetchone()
+        if row:
+            return dict(row)
+        connection.execute(
+            """
+            INSERT INTO iot_devices (device_id, workspace_id, device_name, device_token, location)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (device_id, workspace_id, device_name, token, location),
+        )
+        row = connection.execute(
+            "SELECT * FROM iot_devices WHERE device_id = ?", (device_id,)
+        ).fetchone()
+    return dict(row)
+
+
+def get_iot_device(device_id: str) -> dict[str, Any] | None:
+    with connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM iot_devices WHERE device_id = ?", (device_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def list_iot_devices(workspace_id: str) -> list[dict[str, Any]]:
+    with connect() as connection:
+        rows = connection.execute(
+            "SELECT * FROM iot_devices WHERE workspace_id = ? ORDER BY created_at DESC",
+            (workspace_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def save_iot_reading(
+    device_id: str,
+    workspace_id: str,
+    voltage: float,
+    current: float,
+    power: float,
+    energy_kwh: float,
+    temperature: float | None = None,
+    humidity: float | None = None,
+    is_simulated: bool = False,
+    timestamp: str | None = None,
+) -> dict[str, Any]:
+    reading_id = str(uuid.uuid4())
+    recorded_at = timestamp or datetime.now(timezone.utc).isoformat()
+    with connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO iot_readings (
+                id, device_id, workspace_id, voltage, current, power,
+                energy_kwh, temperature, humidity, is_simulated, recorded_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                reading_id, device_id, workspace_id, voltage, current, power,
+                energy_kwh, temperature, humidity, 1 if is_simulated else 0, recorded_at,
+            ),
+        )
+        connection.execute(
+            "UPDATE iot_devices SET last_seen_at = ? WHERE device_id = ?",
+            (recorded_at, device_id),
+        )
+        row = connection.execute(
+            "SELECT * FROM iot_readings WHERE id = ?", (reading_id,)
+        ).fetchone()
+    return dict(row)
+
+
+def get_latest_iot_reading(workspace_id: str, device_id: str | None = None) -> dict[str, Any] | None:
+    with connect() as connection:
+        if device_id:
+            row = connection.execute(
+                """
+                SELECT r.*, d.device_name, d.location
+                FROM iot_readings r JOIN iot_devices d ON d.device_id = r.device_id
+                WHERE r.workspace_id = ? AND r.device_id = ?
+                ORDER BY r.recorded_at DESC LIMIT 1
+                """,
+                (workspace_id, device_id),
+            ).fetchone()
+        else:
+            row = connection.execute(
+                """
+                SELECT r.*, d.device_name, d.location
+                FROM iot_readings r JOIN iot_devices d ON d.device_id = r.device_id
+                WHERE r.workspace_id = ?
+                ORDER BY r.recorded_at DESC LIMIT 1
+                """,
+                (workspace_id,),
+            ).fetchone()
+    return dict(row) if row else None
+
+
+def list_iot_readings(
+    workspace_id: str,
+    device_id: str | None = None,
+    limit: int = 100,
+    hours: int | None = None,
+) -> list[dict[str, Any]]:
+    with connect() as connection:
+        query = """
+            SELECT r.*, d.device_name, d.location
+            FROM iot_readings r JOIN iot_devices d ON d.device_id = r.device_id
+            WHERE r.workspace_id = ?
+        """
+        params: list[Any] = [workspace_id]
+        if device_id:
+            query += " AND r.device_id = ?"
+            params.append(device_id)
+        if hours:
+            cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+            query += " AND r.recorded_at >= ?"
+            params.append(cutoff)
+        query += " ORDER BY r.recorded_at ASC LIMIT ?"
+        params.append(limit)
+        rows = connection.execute(query, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_reduction_goal(
+    workspace_id: str,
+    title: str,
+    category: str | None,
+    baseline_period: str,
+    baseline_emissions_kg: float,
+    target_reduction_pct: float,
+    target_emissions_kg: float,
+    target_period: str,
+) -> dict[str, Any]:
+    goal_id = str(uuid.uuid4())
+    with connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO reduction_goals (
+                id, workspace_id, title, category, baseline_period,
+                baseline_emissions_kg, target_reduction_pct, target_emissions_kg, target_period, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+            """,
+            (
+                goal_id, workspace_id, title, category, baseline_period,
+                baseline_emissions_kg, target_reduction_pct, target_emissions_kg, target_period,
+            ),
+        )
+        row = connection.execute(
+            "SELECT * FROM reduction_goals WHERE id = ?", (goal_id,)
+        ).fetchone()
+    return dict(row)
+
+
+def list_reduction_goals(workspace_id: str) -> list[dict[str, Any]]:
+    with connect() as connection:
+        rows = connection.execute(
+            "SELECT * FROM reduction_goals WHERE workspace_id = ? ORDER BY created_at DESC",
+            (workspace_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def update_reduction_goal_status(goal_id: str, workspace_id: str, status: str) -> bool:
+    with connect() as connection:
+        cursor = connection.execute(
+            "UPDATE reduction_goals SET status = ? WHERE id = ? AND workspace_id = ?",
+            (status, goal_id, workspace_id),
+        )
+        return cursor.rowcount > 0
+
+
+def seed_reference_factors_if_empty(workspace_id: str) -> int:
+    from .carbon import REFERENCE_FACTORS
+    with connect() as connection:
+        count = connection.execute(
+            "SELECT COUNT(*) FROM emission_factors WHERE workspace_id = ?", (workspace_id,)
+        ).fetchone()[0]
+        if count > 0:
+            return 0
+
+        inserted = 0
+        for f in REFERENCE_FACTORS:
+            factor_id = str(uuid.uuid4())
+            connection.execute(
+                """
+                INSERT INTO emission_factors (
+                    id, workspace_id, category, name, value, unit,
+                    source_name, source_url, factor_year, region, assumptions
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    factor_id, workspace_id, f["category"], f["name"], f["value"],
+                    f["unit"], f["source_name"], f["source_url"],
+                    f["factor_year"], f["region"], f["assumptions"],
+                ),
+            )
+            inserted += 1
+        return inserted

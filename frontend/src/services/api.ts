@@ -2,12 +2,18 @@ import type {
   Activity,
   AccountType,
   AuthState,
+  BillExtractionResult,
   ChatResponse,
   DashboardData,
+  ExplainableIntelligence,
   Factor,
   HealthStatus,
+  IotLatestResponse,
+  IotReading,
+  IotSummaryResponse,
   RagDocument,
   Recommendation,
+  ReductionGoal,
   Workspace,
 } from "../types/api";
 
@@ -113,6 +119,8 @@ export const api = {
     region: string;
     assumptions: string;
   }) => request<Factor>("/api/factors", jsonBody(value)),
+  seedFactors: () =>
+    request<{ seeded_factors_count: number; message: string }>("/api/factors/seed", { method: "POST" }),
   setTarget: (monthly_target_kg: number | null) =>
     request<{ monthly_target_kg: number | null }>("/api/targets", {
       ...jsonBody({ monthly_target_kg }),
@@ -122,6 +130,55 @@ export const api = {
     request<Recommendation[]>(`/api/recommendations?period=${encodeURIComponent(period)}`),
   getCarbonExplanation: (period: string) =>
     request<{ period: string; monthly_total_kg: number; daily: Array<{ activity_date: string; emissions_kg: number }>; categories: Array<{ category: string; emissions_kg: number }>; explanation: string; ai_generated: boolean }>(`/api/carbon-explanation?period=${encodeURIComponent(period)}`),
+  getExplainableAi: (period: string) =>
+    request<ExplainableIntelligence>(`/api/explainable-ai?period=${encodeURIComponent(period)}`),
+
+  // Electricity Bill OCR & Analysis
+  analyzeBill: (formData: FormData) =>
+    request<BillExtractionResult>("/api/electricity/analyze-bill", { method: "POST", body: formData }),
+  calculateElectricity: (value: {
+    quantity: number;
+    period: string;
+    activity_date?: string;
+    description?: string;
+    reporting_unit?: string;
+    factor_id?: string | null;
+  }) => request<Activity>("/api/electricity/calculate", jsonBody(value)),
+
+  // IoT Ingestion & Monitoring
+  getIotLatest: (deviceId?: string) =>
+    request<IotLatestResponse>(`/api/iot/latest${deviceId ? `?device_id=${encodeURIComponent(deviceId)}` : ""}`),
+  getIotHistory: (deviceId?: string, hours: number = 24, limit: number = 100) => {
+    const query = new URLSearchParams({ hours: String(hours), limit: String(limit) });
+    if (deviceId) query.set("device_id", deviceId);
+    return request<{ device_id: string | null; sample_count: number; period_hours: number; energy_consumption_kwh: number; readings: IotReading[] }>(`/api/iot/history?${query}`);
+  },
+  getIotSummary: (deviceId?: string, period?: string) => {
+    const query = new URLSearchParams();
+    if (deviceId) query.set("device_id", deviceId);
+    if (period) query.set("period", period);
+    return request<IotSummaryResponse>(`/api/iot/summary${query.size ? `?${query}` : ""}`);
+  },
+  simulateIot: (deviceId: string = "esp32-energy-01", power_w?: number) =>
+    request<{ status: string; reading: IotReading; device_health: any; note: string }>("/api/iot/simulate", jsonBody({ device_id: deviceId, power_w })),
+
+  // Reduction Goals
+  getGoals: () => request<ReductionGoal[]>("/api/goals"),
+  createGoal: (value: {
+    title: string;
+    category?: string | null;
+    baseline_period: string;
+    baseline_emissions_kg: number;
+    target_reduction_pct: number;
+    target_period: string;
+  }) => request<ReductionGoal>("/api/goals", jsonBody(value)),
+  updateGoalStatus: (goalId: string, status: string) =>
+    request<{ id: string; status: string }>(`/api/goals/${encodeURIComponent(goalId)}/status`, {
+      ...jsonBody({ status }),
+      method: "PATCH",
+    }),
+
+  // Knowledge Assistant RAG
   getDocuments: () => request<RagDocument[]>("/api/documents"),
   addSampleDocument: () => request<{ filename: string }>("/api/documents/sample", { method: "POST" }),
   uploadDocument: (form: FormData) =>

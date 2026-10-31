@@ -3,10 +3,11 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { EmptyState, ErrorState, LoadingState, SuccessState } from "../components/Feedback";
 import { PageHeader } from "../components/PageHeader";
 import { api } from "../services/api";
-import type { DashboardData, Recommendation } from "../types/api";
+import type { DashboardData, Recommendation, ReductionGoal } from "../types/api";
 
 function currentPeriod() {
-  return `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 export function ReductionPlannerPage() {
@@ -56,58 +57,329 @@ export function ReductionPlannerPage() {
 
   if (loading && !dashboard) return <LoadingState label="Loading reduction plan…" />;
 
-  return <div>
-    <PageHeader eyebrow="COLLEGE SUSTAINABILITY" title="Carbon reduction" highlight="planner." description="Set a measured workspace target and review source-category planning prompts. Savings shown by recommendations are planning scenarios, not guaranteed reductions." />
-    {error && <div className="mb-4"><ErrorState message={error} /></div>}
-    {notice && <div className="mb-4"><SuccessState message={notice} /></div>}
-    <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
-      <form onSubmit={submitTarget} className="surface-card h-fit p-5">
-        <div className="mb-5 flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-ice text-leaf"><Target className="h-5 w-5" /></span><div><h2 className="text-sm font-semibold text-slate-800">Monthly target</h2><p className="mt-1 text-xs text-slate-400">kg CO₂e</p></div></div>
-        <label className="form-label">Target emissions<input className="form-input" type="number" min="0" step="0.01" value={target} onChange={(event) => setTarget(event.target.value)} placeholder="Leave blank to clear" /></label>
-        <button className="btn-primary mt-4" type="submit" disabled={saving}>{saving ? "Saving…" : "Save target"}</button>
-      </form>
-      <section className="surface-card p-5">
-        <h2 className="text-sm font-semibold text-slate-800">Planning opportunities</h2>
-        {dashboard && recommendations.length > 0 ? <div className="mt-4 grid gap-3 md:grid-cols-2">{recommendations.map((item, index) => <article key={`${item.category}-${index}`} className="rounded-xl border border-slate-200 p-4"><p className="text-xs font-bold uppercase text-leaf">{item.category}</p><p className="mt-2 text-sm text-slate-600">{item.reason}</p><p className="mt-3 text-sm font-semibold text-slate-800">{item.action}</p></article>)}</div> : <div className="mt-4"><EmptyState>Reduction opportunities appear after measured activities exist and source-backed factors are configured.</EmptyState></div>}
-      </section>
+  return (
+    <div>
+      <PageHeader
+        eyebrow="CAMPUS SUSTAINABILITY"
+        title="Carbon reduction"
+        highlight="planner."
+        description="Set a measured workspace target and review source-category planning prompts. Savings shown by recommendations are planning scenarios, not guaranteed reductions."
+      />
+      {error && <div className="mb-4"><ErrorState message={error} /></div>}
+      {notice && <div className="mb-4"><SuccessState message={notice} /></div>}
+      <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
+        <form onSubmit={submitTarget} className="surface-card h-fit p-5">
+          <div className="mb-5 flex items-center gap-3">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-ice text-leaf">
+              <Target className="h-5 w-5" />
+            </span>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-800">Monthly target</h2>
+              <p className="mt-1 text-xs text-slate-400">kg CO₂e</p>
+            </div>
+          </div>
+          <label className="form-label">
+            Target emissions
+            <input
+              className="form-input"
+              type="number"
+              min="0"
+              step="0.01"
+              value={target}
+              onChange={(event) => setTarget(event.target.value)}
+              placeholder="Leave blank to clear"
+            />
+          </label>
+          <button className="btn-primary mt-4" type="submit" disabled={saving}>
+            {saving ? "Saving…" : "Save target"}
+          </button>
+        </form>
+        <section className="surface-card p-5">
+          <h2 className="text-sm font-semibold text-slate-800">Planning opportunities</h2>
+          {dashboard && recommendations.length > 0 ? (
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {recommendations.map((item, index) => (
+                <article key={`${item.category}-${index}`} className="rounded-xl border border-slate-200 p-4">
+                  <p className="text-xs font-bold uppercase text-leaf">{item.category}</p>
+                  <p className="mt-2 text-sm text-slate-600">{item.reason}</p>
+                  <p className="mt-3 text-sm font-semibold text-slate-800">{item.action}</p>
+                  {item.estimated_savings_kg && (
+                    <p className="mt-2 text-xs font-medium text-blue-700">
+                      Scenario: {item.estimated_savings_kg} kg CO₂e avoided ({item.savings_note})
+                    </p>
+                  )}
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-4">
+              <EmptyState>Reduction opportunities appear after measured activities exist and source-backed factors are configured.</EmptyState>
+            </div>
+          )}
+        </section>
+      </div>
     </div>
-  </div>;
+  );
 }
 
 export function SustainabilityGoalsPage() {
-  const [target, setTarget] = useState("");
+  const [goals, setGoals] = useState<ReductionGoal[]>([]);
+  const [title, setTitle] = useState("");
+  const [baselinePeriod, setBaselinePeriod] = useState(currentPeriod());
+  const [baselineEmissions, setBaselineEmissions] = useState("");
+  const [targetPct, setTargetPct] = useState("15");
+  const [targetPeriod, setTargetPeriod] = useState(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() + 3);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  useEffect(() => {
-    void api.getDashboard(currentPeriod()).then((dashboard) => {
-      setTarget(dashboard.monthly_target_kg?.toString() ?? "");
-    }).catch((reason) => setError(reason instanceof Error ? reason.message : "Current goal could not be loaded."));
-  }, []);
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSaving(true); setError(null); setNotice(null);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const value = target.trim() === "" ? null : Number(target);
-      if (value !== null && (!Number.isFinite(value) || value < 0)) throw new Error("Enter a non-negative monthly target.");
-      await api.setTarget(value);
-      setNotice(value === null ? "Sustainability target cleared." : "Sustainability target saved.");
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Sustainability target could not be saved.");
-    } finally { setSaving(false); }
+      const [list, dashboard] = await Promise.all([
+        api.getGoals(),
+        api.getDashboard(baselinePeriod).catch(() => null),
+      ]);
+      setGoals(list);
+      if (dashboard && dashboard.total_kg > 0 && !baselineEmissions) {
+        setBaselineEmissions(String(dashboard.total_kg));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load reduction goals.");
+    } finally {
+      setLoading(false);
+    }
+  }, [baselinePeriod]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function handleCreateGoal(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const baseKg = Number(baselineEmissions);
+    const pct = Number(targetPct);
+    if (!title.trim() || baseKg <= 0 || pct <= 0 || pct > 100) {
+      setError("Please fill all fields with valid positive numbers.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await api.createGoal({
+        title: title.trim(),
+        baseline_period: baselinePeriod,
+        baseline_emissions_kg: baseKg,
+        target_reduction_pct: pct,
+        target_period: targetPeriod,
+      });
+      setNotice(`Reduction goal '${title}' created successfully.`);
+      setTitle("");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create reduction goal.");
+    } finally {
+      setSaving(false);
+    }
   }
 
-  return <div>
-    <PageHeader eyebrow="COLLEGE SUSTAINABILITY" title="Sustainability" highlight="goals." description="This workspace currently supports one persisted monthly emissions target. Annual and semester-wide goal models are not implemented by the backend." />
-    {error && <div className="mb-4"><ErrorState message={error} /></div>}
-    {notice && <div className="mb-4"><SuccessState message={notice} /></div>}
-    <form onSubmit={submit} className="surface-card max-w-xl p-5 sm:p-7">
-      <label className="form-label">Monthly emissions goal (kg CO₂e)<input className="form-input" type="number" min="0" step="0.01" value={target} onChange={(event) => setTarget(event.target.value)} placeholder="Leave blank to remove the target" /></label>
-      <button className="btn-primary mt-4" type="submit" disabled={saving}>{saving ? "Saving…" : "Save goal"}</button>
-    </form>
-  </div>;
+  async function handleUpdateStatus(goalId: string, status: string) {
+    try {
+      await api.updateGoalStatus(goalId, status);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update goal status.");
+    }
+  }
+
+  const baseKgNum = Number(baselineEmissions) || 0;
+  const pctNum = Number(targetPct) || 0;
+  const targetEmissionsCalc = baseKgNum > 0 ? baseKgNum * (1.0 - pctNum / 100.0) : 0;
+
+  return (
+    <div>
+      <PageHeader
+        eyebrow="CAMPUS SUSTAINABILITY"
+        title="Reduction goals"
+        highlight="& progress tracking."
+        description="Establish baseline emissions, commit to percentage reduction targets, and track observed progress mathematically: Reduction = B - C, Percentage = ((B - C) / B) × 100."
+      />
+
+      {error && <div className="mb-4"><ErrorState message={error} /></div>}
+      {notice && <div className="mb-4"><SuccessState message={notice} /></div>}
+
+      <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
+        {/* Create Goal Form */}
+        <section className="surface-card h-fit p-5">
+          <div className="mb-4 flex items-center gap-3">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-ice text-leaf">
+              <Target className="h-5 w-5" />
+            </span>
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">Set Reduction Target</h2>
+              <p className="text-xs text-slate-500">Grounded in measured baseline data</p>
+            </div>
+          </div>
+
+          <form onSubmit={handleCreateGoal} className="space-y-4">
+            <label className="form-label">
+              Goal Title *
+              <input
+                type="text"
+                required
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Q4 20% Electricity Reduction"
+                className="form-input"
+              />
+            </label>
+
+            <div className="grid grid-cols-2 gap-3">
+              <label className="form-label">
+                Baseline Month *
+                <input
+                  type="month"
+                  required
+                  value={baselinePeriod}
+                  onChange={(e) => setBaselinePeriod(e.target.value)}
+                  className="form-input"
+                />
+              </label>
+
+              <label className="form-label">
+                Baseline Emissions (kg) *
+                <input
+                  type="number"
+                  min="0.1"
+                  step="any"
+                  required
+                  value={baselineEmissions}
+                  onChange={(e) => setBaselineEmissions(e.target.value)}
+                  placeholder="e.g. 1000.0"
+                  className="form-input"
+                />
+              </label>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <label className="form-label">
+                Target Reduction (%) *
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  step="any"
+                  required
+                  value={targetPct}
+                  onChange={(e) => setTargetPct(e.target.value)}
+                  placeholder="e.g. 15"
+                  className="form-input"
+                />
+              </label>
+
+              <label className="form-label">
+                Target Deadline Month *
+                <input
+                  type="month"
+                  required
+                  value={targetPeriod}
+                  onChange={(e) => setTargetPeriod(e.target.value)}
+                  className="form-input"
+                />
+              </label>
+            </div>
+
+            {baseKgNum > 0 && (
+              <div className="rounded-xl bg-blue-50/70 p-3 text-xs text-blue-900">
+                <span className="font-bold">Calculated Target:</span>{" "}
+                {targetEmissionsCalc.toFixed(2)} kg CO₂e ({pctNum}% reduction from {baseKgNum} kg)
+              </div>
+            )}
+
+            <button type="submit" disabled={saving || !title.trim()} className="btn-primary w-full justify-center">
+              {saving ? "Saving Goal…" : "Commit Reduction Goal"}
+            </button>
+          </form>
+        </section>
+
+        {/* Goals List & Progress */}
+        <section className="surface-card p-5">
+          <h2 className="text-sm font-bold text-slate-900">Active Goals & Commitments</h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Progress tracked against verified emissions calculations.
+          </p>
+
+          {loading ? (
+            <div className="mt-6"><LoadingState label="Loading goals…" /></div>
+          ) : goals.length === 0 ? (
+            <div className="mt-6">
+              <EmptyState>No reduction goals created yet. Set a baseline and target above to begin tracking.</EmptyState>
+            </div>
+          ) : (
+            <div className="mt-4 space-y-3">
+              {goals.map((g) => (
+                <div key={g.id} className="rounded-xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-800">{g.title}</h3>
+                      <p className="text-xs text-slate-400">
+                        Baseline: {g.baseline_period} ({g.baseline_emissions_kg} kg CO₂e) → Target: {g.target_period}
+                      </p>
+                    </div>
+                    <span
+                      className={`rounded-full px-2.5 py-0.5 text-xs font-bold capitalize ${
+                        g.status === "achieved"
+                          ? "bg-emerald-50 text-emerald-700"
+                          : g.status === "active"
+                          ? "bg-blue-50 text-blue-700"
+                          : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {g.status}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <div>
+                      <span className="text-slate-500">Target Reduction:</span>{" "}
+                      <strong className="text-leaf">{g.target_reduction_pct}%</strong> (Max {g.target_emissions_kg} kg CO₂e)
+                    </div>
+                    <div className="flex gap-2">
+                      {g.status === "active" && (
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateStatus(g.id, "achieved")}
+                          className="btn-secondary py-1 text-xs text-emerald-700 hover:bg-emerald-50"
+                        >
+                          Mark Achieved
+                        </button>
+                      )}
+                      {g.status === "active" && (
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateStatus(g.id, "cancelled")}
+                          className="btn-secondary py-1 text-xs text-slate-500"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    </div>
+  );
 }
 
 export function CollegeDataExchangePage() {
@@ -127,14 +399,41 @@ export function CollegeDataExchangePage() {
     finally { setBusy(false); }
   }
 
-  return <div>
-    <PageHeader eyebrow="REPORTING & ADMINISTRATION" title="Data import" highlight="and export." description="Export the existing workspace activity report as CSV. Activity import is not enabled because the backend has no import format or validation contract." />
-    {error && <div className="mb-4"><ErrorState message={error} /></div>}
-    <div className="grid gap-4 md:grid-cols-2">
-      <article className="surface-card p-5"><span className="grid h-10 w-10 place-items-center rounded-xl bg-ice text-leaf"><Download className="h-5 w-5" /></span><h2 className="mt-4 text-sm font-semibold text-slate-800">Export available records</h2><p className="mt-2 text-sm text-slate-500">Download the real saved activity report for the current month.</p><button className="btn-primary mt-4" type="button" onClick={() => void exportRecords()} disabled={busy}>{busy ? "Preparing…" : "Export CSV"}</button></article>
-      <article className="surface-card p-5"><span className="grid h-10 w-10 place-items-center rounded-xl bg-lavender text-violet"><FileUp className="h-5 w-5" /></span><h2 className="mt-4 text-sm font-semibold text-slate-800">Import activity data</h2><p className="mt-2 text-sm text-slate-500">Not available yet. Import requires a supported schema, factor matching, validation, and authorization tests.</p><button className="btn-secondary mt-4" type="button" disabled>Import unavailable</button></article>
+  return (
+    <div>
+      <PageHeader
+        eyebrow="REPORTING & ADMINISTRATION"
+        title="Data import"
+        highlight="and export."
+        description="Export the verified workspace activity report as CSV with traceable factor URLs and immutable snapshots."
+      />
+      {error && <div className="mb-4"><ErrorState message={error} /></div>}
+      <div className="grid gap-4 md:grid-cols-2">
+        <article className="surface-card p-5">
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-ice text-leaf">
+            <Download className="h-5 w-5" />
+          </span>
+          <h2 className="mt-4 text-sm font-semibold text-slate-800">Export verified records</h2>
+          <p className="mt-2 text-sm text-slate-500">Download the real saved activity report for the current month.</p>
+          <button className="btn-primary mt-4" type="button" onClick={() => void exportRecords()} disabled={busy}>
+            {busy ? "Preparing…" : "Export CSV"}
+          </button>
+        </article>
+        <article className="surface-card p-5">
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-lavender text-violet">
+            <FileUp className="h-5 w-5" />
+          </span>
+          <h2 className="mt-4 text-sm font-semibold text-slate-800">Electricity bill import (OCR)</h2>
+          <p className="mt-2 text-sm text-slate-500">
+            Use the Electricity Bill OCR Scanner in the Activity page to parse utility bills automatically.
+          </p>
+          <a href="/college/activity" className="btn-secondary mt-4 inline-block text-center">
+            Go to Bill Upload →
+          </a>
+        </article>
+      </div>
     </div>
-  </div>;
+  );
 }
 
 export function CollegeNotificationsPage() {
@@ -162,10 +461,29 @@ export function CollegeNotificationsPage() {
   }, [period]);
 
   if (loading) return <LoadingState label="Checking workspace alerts…" />;
-  return <div>
-    <PageHeader eyebrow="REPORTING & ADMINISTRATION" title="Notifications" highlight="and alerts." description="These alerts are derived from the current workspace dashboard, factors, and monthly target. They are not stored notification history." />
-    {error && <ErrorState message={error} />}
-    <section className="grid gap-3">{items.map((item) => <article key={item.id} className="surface-card flex items-start gap-4 p-5"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-ice text-leaf"><Bell className="h-5 w-5" /></span><div><h2 className="text-sm font-semibold text-slate-800">{item.title}</h2><p className="mt-1 text-sm text-slate-500">{item.detail}</p></div></article>)}</section>
-    {!items.length && !error && <EmptyState>No current workspace alerts were found.</EmptyState>}
-  </div>;
+  return (
+    <div>
+      <PageHeader
+        eyebrow="REPORTING & ADMINISTRATION"
+        title="Notifications"
+        highlight="and alerts."
+        description="These alerts are derived from the current workspace dashboard, factors, and monthly target. They are not stored notification history."
+      />
+      {error && <ErrorState message={error} />}
+      <section className="grid gap-3">
+        {items.map((item) => (
+          <article key={item.id} className="surface-card flex items-start gap-4 p-5">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-ice text-leaf">
+              <Bell className="h-5 w-5" />
+            </span>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-800">{item.title}</h2>
+              <p className="mt-1 text-sm text-slate-500">{item.detail}</p>
+            </div>
+          </article>
+        ))}
+      </section>
+      {!items.length && !error && <EmptyState>No current workspace alerts were found.</EmptyState>}
+    </div>
+  );
 }
