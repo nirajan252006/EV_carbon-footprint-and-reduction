@@ -20,7 +20,13 @@ import { useWorkspace } from "../hooks/WorkspaceContext";
 import { api } from "../services/api";
 import type { Activity, DashboardData, Recommendation } from "../types/api";
 
-const colors = { electricity: "#4266E5", transport: "#8061DB", fuel: "#F59E0B", waste: "#8EA1B5" };
+const colors: Record<string, string> = {
+  electricity: "#00E5FF",
+  transport: "#397BFF",
+  fuel: "#FFB547",
+  waste: "#A855F7",
+  water: "#F472D0",
+};
 
 function currentPeriod() {
   const date = new Date();
@@ -103,13 +109,13 @@ export function CollegeAnalyticsPage() {
     {dashboard && <>
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[{label:"MONTHLY EMISSIONS",value:`${money(dashboard.total_kg)} kg`,icon:BarChart3},{label:"ACTIVITY COUNT",value:String(dashboard.activity_count),icon:Building2},{label:"CATEGORY COVERAGE",value:`${dashboard.categories.length} / 4`,icon:Users},{label:"PERIOD BASELINE",value:dashboard.previous_total_kg ? `${money(dashboard.previous_total_kg)} kg` : "—",icon:GraduationCap}].map(({label,value,icon:Icon}) =>
-          <motion.article key={label} initial={{opacity:0,y:7}} animate={{opacity:1,y:0}} className="surface-card p-5"><div className="flex items-center justify-between"><span className="text-[9px] font-bold tracking-wider text-slate-400">{label}</span><Icon className="h-4 w-4 text-leaf" /></div><p className="mt-3 text-2xl font-semibold text-forest">{value}</p></motion.article>)}
+          <motion.article key={label} initial={{opacity:0,y:7}} animate={{opacity:1,y:0}} className="surface-card p-5"><div className="flex items-center justify-between"><span className="text-[9px] font-bold tracking-wider text-slate-400">{label}</span><Icon className="h-4 w-4 text-cyan-400" /></div><p className="mt-3 text-2xl font-semibold text-slate-800 dark:text-white">{value}</p></motion.article>)}
       </section>
       <section className="mt-4 grid gap-4 xl:grid-cols-2">
         <article className="surface-card p-5"><h2 className="text-sm font-semibold text-slate-800">Category contribution</h2><p className="mt-1 text-xs text-slate-400">Measured emissions · kg CO₂e</p>{dashboard.categories.length ? <div className="mt-4 h-72"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={dashboard.categories} dataKey="emissions_kg" nameKey="category" innerRadius={58} outerRadius={96} paddingAngle={4}>{dashboard.categories.map((item) => <Cell key={item.category} fill={colors[item.category]} />)}</Pie><Tooltip formatter={(value) => [`${money(Number(value))} kg CO₂e`, "Emissions"]}/><Legend /></PieChart></ResponsiveContainer></div> : <EmptyState>No category emissions in this period.</EmptyState>}</article>
         <article className="surface-card p-5"><h2 className="text-sm font-semibold text-slate-800">Daily emissions</h2><p className="mt-1 text-xs text-slate-400">Saved records grouped by activity date</p>{dashboard.daily.length ? <div className="mt-4 h-72"><ResponsiveContainer width="100%" height="100%"><BarChart data={dashboard.daily}><CartesianGrid stroke="#E4E9F2" strokeDasharray="4 4" vertical={false}/><XAxis dataKey="activity_date" tickFormatter={(v) => String(v).slice(8,10)}/><YAxis/><Tooltip formatter={(value) => [`${money(Number(value))} kg CO₂e`, "Emissions"]}/><Bar dataKey="emissions_kg" fill="#4266E5" radius={[5,5,0,0]} /></BarChart></ResponsiveContainer></div> : <EmptyState>No daily records in this period.</EmptyState>}</article>
       </section>
-      <article className="surface-card mt-4 p-5"><h2 className="text-sm font-semibold text-slate-800">Recent campus records</h2>{activities.length ? <div className="mt-4 divide-y divide-slate-100">{activities.map((item) => <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><div><p className="text-sm font-medium text-slate-700">{item.description}</p><p className="mt-1 text-xs capitalize text-slate-400">{item.category} · {item.activity_date ?? item.period} · {item.reporting_unit || "No facility tag"}</p></div><strong className="text-sm text-forest">{money(item.emissions_kg)} kg CO₂e</strong></div>)}</div> : <EmptyState>No campus activities saved in this period.</EmptyState>}</article>
+      <article className="surface-card mt-4 p-5"><h2 className="text-sm font-semibold text-slate-800 dark:text-white">Recent campus records</h2>{activities.length ? <div className="mt-4 divide-y divide-slate-100 dark:divide-white/5">{activities.map((item) => <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><div><p className="text-sm font-medium text-slate-700 dark:text-slate-200">{item.description}</p><p className="mt-1 text-xs capitalize text-slate-400">{item.category} · {item.activity_date ?? item.period} · {item.reporting_unit || "No facility tag"}</p></div><strong className="text-sm text-cyan-400">{money(item.emissions_kg)} kg CO₂e</strong></div>)}</div> : <EmptyState>No campus activities saved in this period.</EmptyState>}</article>
     </>}
   </div>;
 }

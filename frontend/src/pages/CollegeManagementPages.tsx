@@ -336,9 +336,9 @@ export function SustainabilityGoalsPage() {
                     <span
                       className={`rounded-full px-2.5 py-0.5 text-xs font-bold capitalize ${
                         g.status === "achieved"
-                          ? "bg-emerald-50 text-emerald-700"
+                          ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20"
                           : g.status === "active"
-                          ? "bg-blue-50 text-blue-700"
+                          ? "bg-blue-500/10 text-blue-400 border border-blue-500/20"
                           : "bg-slate-100 text-slate-600"
                       }`}
                     >
@@ -349,14 +349,14 @@ export function SustainabilityGoalsPage() {
                   <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs">
                     <div>
                       <span className="text-slate-500">Target Reduction:</span>{" "}
-                      <strong className="text-leaf">{g.target_reduction_pct}%</strong> (Max {g.target_emissions_kg} kg CO₂e)
+                      <strong className="text-cyan-400">{g.target_reduction_pct}%</strong> (Max {g.target_emissions_kg} kg CO₂e)
                     </div>
                     <div className="flex gap-2">
                       {g.status === "active" && (
                         <button
                           type="button"
                           onClick={() => handleUpdateStatus(g.id, "achieved")}
-                          className="btn-secondary py-1 text-xs text-emerald-700 hover:bg-emerald-50"
+                          className="btn-secondary py-1 text-xs text-cyan-400 hover:bg-cyan-500/10"
                         >
                           Mark Achieved
                         </button>

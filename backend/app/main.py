@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 import csv
 import io
 import math
@@ -338,6 +339,81 @@ class TargetRequest(BaseModel):
     model_config = ConfigDict(allow_inf_nan=False)
 
     monthly_target_kg: float | None = Field(default=None, gt=0, le=1_000_000_000)
+
+
+class TripStartRequest(BaseModel):
+    mode: str = Field(default="car", max_length=40)
+    initial_point: dict[str, Any] | None = None
+
+
+class TripPointsBatchRequest(BaseModel):
+    points: list[dict[str, Any]]
+
+
+class TripStopRequest(BaseModel):
+    factor_value: float | None = None
+    factor_name: str | None = None
+
+
+class FacilityCreateRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    site_type: str = Field(default="academic", max_length=40)
+    area_sqft: float = Field(default=0.0, ge=0)
+    baseline_kwh: float = Field(default=0.0, ge=0)
+    baseline_water_l: float = Field(default=0.0, ge=0)
+
+
+class FoodWasteCreateRequest(BaseModel):
+    date: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$")
+    canteen_name: str = Field(min_length=2, max_length=100)
+    meal_type: str = Field(default="Lunch", max_length=40)
+    waste_kg: float = Field(gt=0, le=50000)
+    diverted_compost_kg: float = Field(default=0.0, ge=0)
+
+
+class CampusBusCreateRequest(BaseModel):
+    route_name: str = Field(min_length=2, max_length=120)
+    bus_number: str = Field(min_length=1, max_length=40)
+    distance_km: float = Field(gt=0, le=1000)
+    avg_occupancy: int = Field(gt=0, le=150)
+    fuel_type: str = Field(default="diesel", max_length=30)
+
+
+class EventEmissionCreateRequest(BaseModel):
+    event_name: str = Field(min_length=2, max_length=160)
+    event_date: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$")
+    attendees: int = Field(gt=0, le=100000)
+    duration_hours: float = Field(gt=0, le=240)
+    generator_kwh: float = Field(default=0.0, ge=0)
+    meals_served: int = Field(default=0, ge=0)
+    travel_km: float = Field(default=0.0, ge=0)
+
+
+class GreenChallengeCreateRequest(BaseModel):
+    title: str = Field(min_length=3, max_length=160)
+    description: str = Field(min_length=5, max_length=500)
+    category: str = Field(max_length=40)
+    target_reduction_pct: float = Field(gt=0, le=100)
+    start_date: str
+    end_date: str
+
+
+class ChallengeJoinRequest(BaseModel):
+    student_name: str = Field(min_length=2, max_length=120)
+    department_or_hostel: str = Field(min_length=2, max_length=120)
+
+
+class BulkImportRow(BaseModel):
+    category: str
+    description: str
+    quantity: float
+    unit: str
+    period: str
+    reporting_unit: str = ""
+
+
+class BulkImportRequest(BaseModel):
+    rows: list[BulkImportRow]
 
 
 @app.post("/api/auth/register", status_code=201)
@@ -1150,6 +1226,271 @@ def seed_factors(request: Request) -> dict[str, object]:
     workspace_id = require_onboarding(current_principal(request))
     count = database.seed_reference_factors_if_empty(workspace_id)
     return {"seeded_factors_count": count, "message": f"{count} reference emission factors initialized."}
+
+
+# --- GPS Trip Tracking ---
+
+@app.post("/api/trips/start", status_code=201)
+def trip_start(req: TripStartRequest, request: Request) -> dict[str, object]:
+    principal = current_principal(request)
+    workspace_id = require_onboarding(principal)
+    return database.start_trip(
+        workspace_id=workspace_id,
+        mode=req.mode,
+        user_id=str(principal["id"]) if "id" in principal else None,
+        initial_point=req.initial_point,
+    )
+
+
+@app.post("/api/trips/{trip_id}/points")
+def trip_add_points(trip_id: str, req: TripPointsBatchRequest, request: Request) -> dict[str, object]:
+    require_onboarding(current_principal(request))
+    return database.add_trip_points(trip_id, req.points)
+
+
+@app.post("/api/trips/{trip_id}/stop")
+def trip_stop(trip_id: str, req: TripStopRequest, request: Request) -> dict[str, object]:
+    principal = current_principal(request)
+    workspace_id = require_onboarding(principal)
+
+    factor_val = req.factor_value or 0.170
+    factor_name = req.factor_name or "Personal Vehicle"
+
+    trip = database.complete_trip(trip_id, factor_val=factor_val, factor_name=factor_name)
+
+    # Save to activities ledger with data_origin="gps"
+    if trip["distance_km"] > 0 and trip["emissions_kg"] > 0:
+        period = datetime.now().strftime("%Y-%m")
+        factors = database.list_factors(workspace_id, "transport")
+        f_id = factors[0]["id"] if factors else None
+        if f_id:
+            try:
+                database.create_activity(
+                    workspace_id=workspace_id,
+                    category="transport",
+                    description=f"GPS Trip ({trip['mode'].capitalize()}) - {trip['distance_km']} km",
+                    quantity=trip["distance_km"],
+                    unit="km",
+                    period=period,
+                    reporting_unit="GPS Tracking",
+                    factor=factors[0],
+                    data_origin="gps",
+                )
+            except Exception:
+                pass
+
+    return trip
+
+
+@app.get("/api/trips")
+def trip_list(request: Request, limit: int = Query(default=25, ge=1, le=100)) -> list[dict[str, object]]:
+    workspace_id = require_onboarding(current_principal(request))
+    return database.list_trips(workspace_id, limit=limit)
+
+
+# --- Multi-Site & Campus Facilities ---
+
+@app.get("/api/facilities")
+def get_facilities(request: Request) -> list[dict[str, object]]:
+    workspace_id = require_onboarding(current_principal(request))
+    return database.list_facilities(workspace_id)
+
+
+@app.post("/api/facilities", status_code=201)
+def add_facility(req: FacilityCreateRequest, request: Request) -> dict[str, object]:
+    workspace_id = require_onboarding(current_principal(request))
+    return database.create_facility(
+        workspace_id=workspace_id,
+        name=req.name,
+        site_type=req.site_type,
+        area_sqft=req.area_sqft,
+        baseline_kwh=req.baseline_kwh,
+        baseline_water_l=req.baseline_water_l,
+    )
+
+
+# --- Smart Campus & College Endpoints ---
+
+@app.get("/api/college/food-waste")
+def get_food_waste(request: Request, limit: int = Query(default=30, ge=1, le=100)) -> list[dict[str, object]]:
+    workspace_id = require_onboarding(current_principal(request))
+    return database.list_food_waste_records(workspace_id, limit)
+
+
+@app.post("/api/college/food-waste", status_code=201)
+def add_food_waste(req: FoodWasteCreateRequest, request: Request) -> dict[str, object]:
+    workspace_id = require_onboarding(current_principal(request))
+    return database.create_food_waste_record(
+        workspace_id=workspace_id,
+        date=req.date,
+        canteen_name=req.canteen_name,
+        meal_type=req.meal_type,
+        waste_kg=req.waste_kg,
+        diverted_compost_kg=req.diverted_compost_kg,
+    )
+
+
+@app.get("/api/college/buses")
+def get_campus_buses(request: Request) -> list[dict[str, object]]:
+    workspace_id = require_onboarding(current_principal(request))
+    return database.list_campus_buses(workspace_id)
+
+
+@app.post("/api/college/buses", status_code=201)
+def add_campus_bus(req: CampusBusCreateRequest, request: Request) -> dict[str, object]:
+    workspace_id = require_onboarding(current_principal(request))
+    return database.create_campus_bus(
+        workspace_id=workspace_id,
+        route_name=req.route_name,
+        bus_number=req.bus_number,
+        distance_km=req.distance_km,
+        avg_occupancy=req.avg_occupancy,
+        fuel_type=req.fuel_type,
+    )
+
+
+@app.get("/api/college/events")
+def get_events(request: Request) -> list[dict[str, object]]:
+    workspace_id = require_onboarding(current_principal(request))
+    return database.list_event_emissions(workspace_id)
+
+
+@app.post("/api/college/events", status_code=201)
+def calculate_event(req: EventEmissionCreateRequest, request: Request) -> dict[str, object]:
+    workspace_id = require_onboarding(current_principal(request))
+
+    gen_kg = req.generator_kwh * 0.71
+    meal_kg = req.meals_served * 1.5
+    travel_kg = req.travel_km * 0.089
+
+    total_kg = round(gen_kg + meal_kg + travel_kg, 2)
+    breakdown = {
+        "energy_emissions_kg": round(gen_kg, 2),
+        "catering_emissions_kg": round(meal_kg, 2),
+        "travel_emissions_kg": round(travel_kg, 2),
+        "per_attendee_kg": round(total_kg / req.attendees, 2) if req.attendees > 0 else 0.0,
+    }
+
+    return database.create_event_emission(
+        workspace_id=workspace_id,
+        event_name=req.event_name,
+        event_date=req.event_date,
+        attendees=req.attendees,
+        duration_hours=req.duration_hours,
+        breakdown=breakdown,
+        total_kg=total_kg,
+    )
+
+
+@app.get("/api/college/challenges")
+def get_challenges(request: Request) -> list[dict[str, object]]:
+    workspace_id = require_onboarding(current_principal(request))
+    return database.list_green_challenges(workspace_id)
+
+
+@app.post("/api/college/challenges", status_code=201)
+def add_challenge(req: GreenChallengeCreateRequest, request: Request) -> dict[str, object]:
+    workspace_id = require_onboarding(current_principal(request))
+    return database.create_green_challenge(
+        workspace_id=workspace_id,
+        title=req.title,
+        description=req.description,
+        category=req.category,
+        target_pct=req.target_reduction_pct,
+        start_date=req.start_date,
+        end_date=req.end_date,
+    )
+
+
+@app.post("/api/college/challenges/{challenge_id}/join", status_code=201)
+def join_challenge(challenge_id: str, req: ChallengeJoinRequest, request: Request) -> dict[str, object]:
+    principal = current_principal(request)
+    workspace_id = require_onboarding(principal)
+    return database.join_green_challenge(
+        challenge_id=challenge_id,
+        workspace_id=workspace_id,
+        student_name=req.student_name,
+        department_or_hostel=req.department_or_hostel,
+        user_id=str(principal["id"]) if "id" in principal else None,
+    )
+
+
+@app.get("/api/college/leaderboard")
+def get_leaderboard(request: Request) -> list[dict[str, object]]:
+    workspace_id = require_onboarding(current_principal(request))
+    return database.get_campus_leaderboard(workspace_id)
+
+
+# --- Enterprise & Organization Endpoints ---
+
+@app.get("/api/organization/advisor")
+def get_operations_advisor(request: Request, period: str | None = Query(default=None)) -> list[dict[str, object]]:
+    workspace_id = require_onboarding(current_principal(request))
+    selected_period = period or datetime.now().strftime("%Y-%m")
+    workspace = database.get_workspace(workspace_id) or {"name": "Workspace", "id": workspace_id}
+    dashboard_data = database.get_dashboard(workspace_id, selected_period)
+    activities = database.list_activities(workspace_id, selected_period)
+
+    xai = explainable_ai.generate_explainable_intelligence(
+        workspace=workspace,
+        period=selected_period,
+        dashboard_data=dashboard_data,
+        activities=activities,
+    )
+    return xai.get("operations_advisor", [])
+
+
+@app.get("/api/organization/scopes")
+def get_scopes(request: Request, period: str | None = Query(default=None)) -> list[dict[str, object]]:
+    workspace_id = require_onboarding(current_principal(request))
+    selected_period = period or datetime.now().strftime("%Y-%m")
+    workspace = database.get_workspace(workspace_id) or {"name": "Workspace", "id": workspace_id}
+    dashboard_data = database.get_dashboard(workspace_id, selected_period)
+    activities = database.list_activities(workspace_id, selected_period)
+
+    xai = explainable_ai.generate_explainable_intelligence(
+        workspace=workspace,
+        period=selected_period,
+        dashboard_data=dashboard_data,
+        activities=activities,
+    )
+    return xai.get("scopes_breakdown", [])
+
+
+@app.post("/api/organization/bulk-import", status_code=201)
+def bulk_import(req: BulkImportRequest, request: Request) -> dict[str, object]:
+    workspace_id = require_onboarding(current_principal(request))
+    imported_count = 0
+    errors = []
+
+    for idx, row in enumerate(req.rows):
+        factors = database.list_factors(workspace_id, row.category)
+        if not factors:
+            errors.append(f"Row {idx+1}: No factor found for {row.category}")
+            continue
+
+        factor = factors[0]
+        try:
+            database.create_activity(
+                workspace_id=workspace_id,
+                category=row.category,
+                description=row.description,
+                quantity=row.quantity,
+                unit=row.unit,
+                period=row.period,
+                reporting_unit=row.reporting_unit,
+                factor=factor,
+                data_origin="bulk_import",
+            )
+            imported_count += 1
+        except Exception as e:
+            errors.append(f"Row {idx+1}: {str(e)}")
+
+    return {
+        "imported_count": imported_count,
+        "failed_count": len(errors),
+        "errors": errors[:5],
+    }
 
 
 FRONTEND_DIST = ROOT_DIR / "frontend" / "dist"

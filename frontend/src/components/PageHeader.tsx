@@ -22,17 +22,17 @@ export function PageHeader({
       className="mb-8 flex flex-wrap items-end justify-between gap-5"
     >
       <div>
-        <div className="mb-2.5 inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-[10px] font-bold tracking-[0.18em] text-emerald-700 dark:border-ecogreen/30 dark:bg-ecogreen/15 dark:text-ecogreen">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 dark:bg-ecogreen animate-pulse" />
+        <div className="mb-2.5 inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-[10px] font-bold tracking-[0.18em] text-cyan-400">
+          <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" />
           <span>{eyebrow.toUpperCase()}</span>
         </div>
-        <h1 className="text-3xl font-extrabold leading-tight tracking-tight text-slate-800 dark:text-white sm:text-4xl">
+        <h1 className="text-3xl font-extrabold leading-tight tracking-tight text-[#F4F7FF] sm:text-4xl">
           {title}{" "}
-          <span className="bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 bg-clip-text text-transparent dark:from-ecogreen dark:via-ecocyan dark:to-ecoblue">
+          <span className="bg-gradient-to-r from-cyan-400 via-hologram-blue to-violet-500 bg-clip-text text-transparent">
             {highlight}
           </span>
         </h1>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[#A8B3CC]">
           {description}
         </p>
       </div>

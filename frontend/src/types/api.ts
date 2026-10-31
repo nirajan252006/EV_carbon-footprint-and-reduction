@@ -1,5 +1,22 @@
 export type AccountType = "individual" | "college" | "organization";
-export type Category = "electricity" | "transport" | "fuel" | "waste";
+
+export type Category = "electricity" | "transport" | "fuel" | "waste" | "water";
+
+export interface User {
+  id: string;
+  email: string;
+  full_name: string;
+  account_type: AccountType;
+  role: "owner" | "admin" | "member";
+  created_at: string;
+}
+
+export interface WorkspaceProfile {
+  institution_name?: string;
+  department?: string;
+  organization_name?: string;
+  sector?: string;
+}
 
 export interface Workspace {
   id: string;
@@ -8,26 +25,15 @@ export interface Workspace {
   region: string;
   monthly_target_kg: number | null;
   onboarding_complete: boolean;
-  profile: {
-    institution_name?: string;
-    organization_name?: string;
-    department?: string;
-    sector?: string;
-  } | null;
-}
-
-export interface AuthUser {
-  id: string;
-  email: string;
-  full_name: string;
-  account_type: AccountType;
-  role: "owner" | "admin" | "member";
+  profile?: WorkspaceProfile;
+  created_at: string;
 }
 
 export interface AuthState {
-  user: AuthUser;
-  workspace: Workspace;
-  onboarding_complete: boolean;
+  user: User;
+  workspace: Workspace | null;
+  workspaces?: Workspace[];
+  onboarding_complete?: boolean;
 }
 
 export interface Factor {
@@ -50,8 +56,8 @@ export interface Activity {
   quantity: number;
   unit: string;
   period: string;
-  activity_date: string | null;
-  reporting_unit: string;
+  activity_date?: string;
+  reporting_unit?: string;
   factor_id: string;
   factor_name: string;
   factor_value: number;
@@ -63,50 +69,64 @@ export interface Activity {
   assumptions: string;
   emissions_kg: number;
   data_origin?: string;
+  scope?: "scope_1" | "scope_2" | "scope_3";
+  created_at: string;
+}
+
+export interface CategoryBreakdown {
+  category: Category;
+  emissions_kg: number;
+  activity_count: number;
+}
+
+export interface DailyPoint {
+  activity_date: string;
+  emissions_kg: number;
+}
+
+export interface TrendPoint {
+  period: string;
+  emissions_kg: number;
 }
 
 export interface DashboardData {
   period: string;
-  previous_period: string;
   total_kg: number;
-  previous_total_kg: number;
   activity_count: number;
-  categories: Array<{ category: Category; emissions_kg: number }>;
-  daily: Array<{ activity_date: string; emissions_kg: number }>;
-  contributors: Array<{
-    id: string;
-    category: Category;
-    description: string;
-    reporting_unit: string;
-    emissions_kg: number;
-  }>;
-  trend: Array<{ period: string; emissions_kg: number }>;
   monthly_target_kg: number | null;
+  previous_period: string;
+  previous_total_kg: number;
+  categories: CategoryBreakdown[];
+  daily: DailyPoint[];
+  trend: TrendPoint[];
 }
 
-export interface Recommendation {
-  category: Category;
-  reason: string;
-  action: string;
-  estimated_savings_kg: number | null;
-  savings_note: string;
+export interface RagSource {
+  id?: string;
+  document_id?: string;
+  document_name: string;
+  filename?: string;
+  source_url?: string;
+  page_number: number | null;
+  snippet: string;
 }
 
 export interface RagDocument {
   id: string;
   filename: string;
-  source_url: string | null;
-  created_at: string;
+  source_url?: string;
   chunk_count: number;
+  created_at: string;
 }
 
-export interface RagSource {
-  id: string;
-  document_id: string;
-  filename: string;
-  page_number: number | null;
-  source_url: string | null;
-  similarity: number;
+export interface IotSummaryResponse {
+  period: string;
+  total_consumption_kwh: number;
+  estimated_emissions_kg: number;
+  factor_applied: Factor | null;
+  daily_breakdown: Array<{ date: string; consumption_kwh: number; sample_count: number }>;
+  sample_count: number;
+  resets_detected: number;
 }
 
 export interface ChatResponse {
@@ -176,22 +196,6 @@ export interface IotLatestResponse {
   }>;
 }
 
-export interface IotSummaryResponse {
-  period: string;
-  total_consumption_kwh: number;
-  estimated_emissions_kg: number;
-  factor_applied: Factor | null;
-  daily_breakdown: Array<{
-    date: string;
-    consumption_kwh: number;
-    sample_count: number;
-    average_power_w: number;
-    peak_power_w: number;
-  }>;
-  sample_count: number;
-  resets_detected: number;
-}
-
 export interface ActivityTrace {
   id: string;
   category: Category;
@@ -199,6 +203,7 @@ export interface ActivityTrace {
   activity_date: string;
   quantity: number;
   unit: string;
+  scope?: string;
   factor_name: string;
   factor_value: number;
   factor_unit: string;
@@ -210,6 +215,53 @@ export interface ActivityTrace {
   explanation: string;
   data_origin: string;
   is_measured: boolean;
+}
+
+export interface ScopeSummary {
+  scope: string;
+  emissions_kg: number;
+  percentage: number;
+}
+
+export interface AnomalyAlert {
+  date: string;
+  emissions_kg: number;
+  expected_avg_kg: number;
+  spike_percentage: number;
+  severity: "high" | "medium";
+  explanation: string;
+}
+
+export interface ForecastingResult {
+  projected_kg: number;
+  confidence: number;
+  methodology: string;
+  trend_direction: "increasing" | "decreasing" | "stable";
+}
+
+export interface ImpactEquivalents {
+  emissions_kg: number;
+  avoided_kg: number;
+  trees_absorption_needed: number;
+  trees_preserved: number;
+  money_saved_inr: number;
+  water_litres_saved: number;
+}
+
+export interface OperationsAdvisorItem {
+  category: Category;
+  current_emissions_kg: number;
+  proposed_action: string;
+  scenario_reduction_pct: number;
+  estimated_avoided_kg: number;
+  estimated_cost_inr: number;
+  payback_months: number;
+  effort: "Low" | "Moderate" | "High";
+  feasibility_score: number;
+  formula: string;
+  assumptions: string;
+  priority: string;
+  disclaimer: string;
 }
 
 export interface ExplainableIntelligence {
@@ -230,6 +282,7 @@ export interface ExplainableIntelligence {
     emissions_kg: number;
     percentage_of_total: number;
   }>;
+  scopes_breakdown?: ScopeSummary[];
   period_comparison: {
     current_period: string;
     current_total_kg: number;
@@ -253,6 +306,10 @@ export interface ExplainableIntelligence {
     priority: string;
     disclaimer: string;
   }>;
+  operations_advisor?: OperationsAdvisorItem[];
+  anomalies?: AnomalyAlert[];
+  forecast?: ForecastingResult;
+  impact_equivalents?: ImpactEquivalents;
   uncertainty_and_assumptions: string[];
   ai_generated: boolean;
   daily_distribution: Array<{ activity_date: string; emissions_kg: number }>;
@@ -271,4 +328,94 @@ export interface ReductionGoal {
   target_period: string;
   status: "active" | "achieved" | "missed" | "cancelled";
   created_at: string;
+}
+
+export interface Recommendation {
+  category: Category;
+  action: string;
+  reason: string;
+  estimated_savings_kg: number | null;
+  savings_note: string;
+}
+
+export interface GpsTrip {
+  id: string;
+  workspace_id: string;
+  user_id?: string;
+  mode: string;
+  start_time: string;
+  end_time?: string;
+  distance_km: number;
+  emissions_kg: number;
+  status: "in_progress" | "completed";
+  points?: Array<{ latitude: number; longitude: number; accuracy?: number; timestamp?: number }>;
+  created_at: string;
+}
+
+export interface Facility {
+  id: string;
+  workspace_id: string;
+  name: string;
+  site_type: string;
+  area_sqft: number;
+  baseline_kwh: number;
+  baseline_water_l: number;
+  created_at: string;
+}
+
+export interface FoodWasteRecord {
+  id: string;
+  workspace_id: string;
+  date: string;
+  canteen_name: string;
+  meal_type: string;
+  waste_kg: number;
+  emissions_kg: number;
+  diverted_compost_kg: number;
+  created_at: string;
+}
+
+export interface CampusBus {
+  id: string;
+  workspace_id: string;
+  route_name: string;
+  bus_number: string;
+  distance_km: number;
+  avg_occupancy: number;
+  fuel_type: string;
+  daily_emissions_kg: number;
+  created_at: string;
+}
+
+export interface EventEmission {
+  id: string;
+  workspace_id: string;
+  event_name: string;
+  event_date: string;
+  attendees: number;
+  duration_hours: number;
+  breakdown: Record<string, number>;
+  total_emissions_kg: number;
+  created_at: string;
+}
+
+export interface GreenChallenge {
+  id: string;
+  workspace_id: string;
+  title: string;
+  description: string;
+  category: string;
+  target_reduction_pct: number;
+  start_date: string;
+  end_date: string;
+  participants_count: number;
+  verified_co2e_saved_kg: number;
+  status: string;
+  created_at: string;
+}
+
+export interface LeaderboardEntry {
+  department_or_hostel: string;
+  verified_participants: number;
+  total_points: number;
 }

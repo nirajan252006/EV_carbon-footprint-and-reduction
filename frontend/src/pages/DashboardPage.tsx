@@ -33,6 +33,9 @@ import {
 } from "recharts";
 import { EmptyState, ErrorState, LoadingState } from "../components/Feedback";
 import { PageHeader } from "../components/PageHeader";
+import { IndividualGpsWidget } from "../components/IndividualGpsWidget";
+import { OrganizationOperationsWidget } from "../components/OrganizationOperationsWidget";
+import { CampusSustainabilityWidget } from "../components/CampusSustainabilityWidget";
 import { useWorkspace } from "../hooks/WorkspaceContext";
 import { api } from "../services/api";
 import type {
@@ -43,10 +46,11 @@ import type {
 } from "../types/api";
 
 const CATEGORY_COLORS: Record<string, string> = {
-  electricity: "#42E695", // ecogreen
-  transport: "#42C9FF",   // ecocyan
-  fuel: "#F59E0B",        // amber
-  waste: "#9B7BFF",       // ecoviolet
+  electricity: "#00E5FF", // electric cyan
+  transport: "#397BFF",   // holographic blue
+  fuel: "#FFB547",        // amber alerts
+  waste: "#A855F7",       // neon violet
+  water: "#F472D0",       // soft magenta
 };
 
 function currentPeriod() {
@@ -242,7 +246,7 @@ export function DashboardPage() {
             onClick={exportReport}
             disabled={busy}
           >
-            <Download className="h-4 w-4 text-emerald-600 dark:text-ecogreen" />
+            <Download className="h-4 w-4 text-cyan-400" />
             <span>Export CSV</span>
           </button>
         </div>
@@ -258,9 +262,9 @@ export function DashboardPage() {
           initial={{ opacity: 0, y: -4 }}
           animate={{ opacity: 1, y: 0 }}
           role="status"
-          className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3.5 text-xs font-semibold text-emerald-800 dark:border-ecogreen/30 dark:bg-ecogreen/10 dark:text-ecogreen"
+          className="flex items-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-3.5 text-xs font-semibold text-cyan-300 dark:border-cyan-400/30 dark:bg-cyan-400/10 dark:text-cyan-300"
         >
-          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-ecogreen" />
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-cyan-400" />
           <span>{notice}</span>
         </motion.div>
       )}
@@ -269,13 +273,13 @@ export function DashboardPage() {
       {data && (
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {/* Card 1: Total Footprint */}
-          <div className="surface-card group relative overflow-hidden p-5 transition-all dark:hover:border-ecogreen/40 dark:hover:shadow-glow-green">
-            <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-400 dark:from-ecogreen dark:to-ecoteal" />
+          <div className="surface-card group relative overflow-hidden p-5 transition-all dark:hover:border-cyan-400/40 dark:hover:shadow-glow-cyan">
+            <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-cyan-500 to-blue-500" />
             <div className="flex items-start justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 Monthly Carbon Footprint
               </span>
-              <div className="grid h-8 w-8 place-items-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:bg-ecogreen/15 dark:text-ecogreen">
+              <div className="grid h-8 w-8 place-items-center rounded-xl bg-cyan-500/10 text-cyan-400 dark:bg-cyan-400/15 dark:text-cyan-400">
                 <Gauge className="h-4 w-4" />
               </div>
             </div>
@@ -291,13 +295,13 @@ export function DashboardPage() {
           </div>
 
           {/* Card 2: Category Coverage */}
-          <div className="surface-card group relative overflow-hidden p-5 transition-all dark:hover:border-ecocyan/40 dark:hover:shadow-glow-cyan">
-            <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-cyan-500 to-blue-500 dark:from-ecocyan dark:to-ecoblue" />
+          <div className="surface-card group relative overflow-hidden p-5 transition-all dark:hover:border-cyan-400/40 dark:hover:shadow-glow-cyan">
+            <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-cyan-500 to-blue-500" />
             <div className="flex items-start justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 Category Scope
               </span>
-              <div className="grid h-8 w-8 place-items-center rounded-xl bg-cyan-500/10 text-cyan-600 dark:bg-ecocyan/15 dark:text-ecocyan">
+              <div className="grid h-8 w-8 place-items-center rounded-xl bg-cyan-500/10 text-cyan-400 dark:bg-cyan-400/15 dark:text-cyan-400">
                 <Zap className="h-4 w-4" />
               </div>
             </div>
@@ -313,8 +317,8 @@ export function DashboardPage() {
           </div>
 
           {/* Card 3: Prior Period Comparison */}
-          <div className="surface-card group relative overflow-hidden p-5 transition-all dark:hover:border-ecoviolet/40">
-            <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-violet-500 to-purple-500 dark:from-ecoviolet dark:to-purple-400" />
+          <div className="surface-card group relative overflow-hidden p-5 transition-all dark:hover:border-violet-500/40">
+            <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-violet-500 to-purple-500" />
             <div className="flex items-start justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 Prior Period Shift
@@ -322,7 +326,7 @@ export function DashboardPage() {
               <div
                 className={`grid h-8 w-8 place-items-center rounded-xl ${
                   comparison !== null && comparison <= 0
-                    ? "bg-emerald-500/10 text-emerald-600 dark:bg-ecogreen/15 dark:text-ecogreen"
+                    ? "bg-cyan-500/10 text-cyan-400 dark:bg-cyan-400/15 dark:text-cyan-400"
                     : "bg-rose-500/10 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400"
                 }`}
               >
@@ -339,7 +343,7 @@ export function DashboardPage() {
                   <span
                     className={`text-3xl font-black tracking-tight ${
                       comparison <= 0
-                        ? "text-emerald-600 dark:text-ecogreen"
+                        ? "text-cyan-400"
                         : "text-rose-600 dark:text-rose-400"
                     }`}
                   >
@@ -362,13 +366,13 @@ export function DashboardPage() {
           </div>
 
           {/* Card 4: Monthly Budget / Target */}
-          <div className="surface-card group relative overflow-hidden p-5 transition-all dark:hover:border-ecoblue/40">
-            <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-blue-500 to-teal-500 dark:from-ecoblue dark:to-ecoteal" />
+          <div className="surface-card group relative overflow-hidden p-5 transition-all dark:hover:border-blue-500/40">
+            <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-blue-500 to-cyan-500" />
             <div className="flex items-start justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 Budget Target Limit
               </span>
-              <div className="grid h-8 w-8 place-items-center rounded-xl bg-blue-500/10 text-blue-600 dark:bg-ecoblue/15 dark:text-ecoblue">
+              <div className="grid h-8 w-8 place-items-center rounded-xl bg-blue-500/10 text-blue-400 dark:bg-blue-400/15 dark:text-blue-400">
                 <TrendingUp className="h-4 w-4" />
               </div>
             </div>
@@ -393,18 +397,37 @@ export function DashboardPage() {
         </section>
       )}
 
+      {/* Role-Specific Connected Experience Engine */}
+      {accountType === "individual" && data && (
+        <IndividualGpsWidget
+          totalKg={data.total_kg}
+          monthlyTarget={data.monthly_target_kg}
+          impact={explainableAi?.impact_equivalents}
+          anomalies={explainableAi?.anomalies}
+          onTripCompleted={load}
+        />
+      )}
+
+      {accountType === "organization" && (
+        <OrganizationOperationsWidget period={period} onRefresh={load} />
+      )}
+
+      {accountType === "college" && (
+        <CampusSustainabilityWidget />
+      )}
+
       {/* IoT Household Energy & Environmental Monitor Panel */}
       <section className="surface-card relative overflow-hidden p-6 sm:p-7 dark:border-white/10 dark:bg-[#0D1B2A]/85">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200/60 pb-5 dark:border-white/10">
           <div className="flex items-center gap-3.5">
             <div className="relative">
-              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 text-cyan-600 dark:text-ecocyan border border-cyan-500/30">
+              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 text-cyan-400 border border-cyan-500/30">
                 <Cpu className="h-6 w-6" />
               </div>
               {iotStatus === "online" && (
                 <span className="absolute -right-1 -top-1 flex h-4 w-4">
-                  <span className="animate-radar-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-4 w-4 bg-emerald-500 dark:bg-ecogreen border-2 border-white dark:border-darksurface" />
+                  <span className="animate-radar-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-4 w-4 bg-cyan-400 border-2 border-white dark:border-[#080D1B]" />
                 </span>
               )}
             </div>
@@ -417,25 +440,25 @@ export function DashboardPage() {
                 <span
                   className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold tracking-wider ${
                     iotStatus === "online"
-                      ? "bg-emerald-500/10 text-emerald-700 dark:bg-ecogreen/15 dark:text-ecogreen border border-emerald-500/30"
+                      ? "bg-cyan-500/10 text-cyan-300 dark:bg-cyan-400/15 dark:text-cyan-400 border border-cyan-500/30"
                       : iotStatus === "stale"
-                      ? "bg-amber-500/10 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400 border border-amber-500/30"
+                      ? "bg-amber-500/10 text-amber-300 dark:bg-amber-500/15 dark:text-amber-400 border border-amber-500/30"
                       : "bg-slate-200/60 text-slate-600 dark:bg-white/10 dark:text-slate-400"
                   }`}
                 >
                   <span
                     className={`h-1.5 w-1.5 rounded-full ${
                       iotStatus === "online"
-                        ? "bg-emerald-500 dark:bg-ecogreen animate-pulse"
+                        ? "bg-cyan-400 animate-pulse"
                         : iotStatus === "stale"
-                        ? "bg-amber-500"
+                        ? "bg-amber-400"
                         : "bg-slate-400"
                     }`}
                   />
                   {iotStatus.toUpperCase()}
                 </span>
                 {latestReading?.is_simulated ? (
-                  <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[10px] font-bold text-violet-700 dark:text-ecoviolet">
+                  <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[10px] font-bold text-violet-300">
                     Microcontroller Simulation
                   </span>
                 ) : null}
@@ -454,10 +477,10 @@ export function DashboardPage() {
             type="button"
             onClick={handleSimulateIot}
             disabled={simulatingIot}
-            className="btn-secondary h-10 gap-2 border-emerald-500/30 text-xs text-emerald-700 hover:bg-emerald-50 dark:border-ecogreen/30 dark:text-ecogreen dark:hover:bg-ecogreen/10"
+            className="btn-secondary h-10 gap-2 border-cyan-500/30 text-xs text-cyan-400 hover:bg-cyan-500/10 dark:border-cyan-400/30 dark:text-cyan-400 dark:hover:bg-cyan-400/10"
             title="Inject an active simulated sensor reading for testing and hackathon demo"
           >
-            <Radio className="h-3.5 w-3.5 text-emerald-600 dark:text-ecogreen" />
+            <Radio className="h-3.5 w-3.5 text-cyan-400" />
             <span>{simulatingIot ? "Sampling Stream…" : "Simulate ESP32 Reading"}</span>
           </button>
         </div>
@@ -497,7 +520,7 @@ export function DashboardPage() {
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-400">
               Cumulative Meter Energy
             </span>
-            <p className="mt-1.5 text-2xl font-black text-emerald-600 dark:text-ecogreen">
+            <p className="mt-1.5 text-2xl font-black text-cyan-400">
               <CountUp
                 end={latestReading ? latestReading.energy_kwh : 0}
                 decimals={3}
@@ -533,7 +556,7 @@ export function DashboardPage() {
         <section className="surface-card relative overflow-hidden p-6 sm:p-7 dark:border-white/10 dark:bg-[#0D1B2A]/85">
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200/60 pb-5 dark:border-white/10">
             <div className="flex items-center gap-3.5">
-              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-emerald-500/20 via-teal-500/20 to-cyan-500/20 text-emerald-600 dark:text-ecogreen border border-emerald-500/30">
+              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-cyan-500/20 via-blue-500/20 to-violet-500/20 text-cyan-400 border border-cyan-500/30">
                 <Sparkles className="h-6 w-6" />
               </div>
               <div>
@@ -541,7 +564,7 @@ export function DashboardPage() {
                   <h2 className="text-base font-bold text-slate-900 dark:text-white">
                     Explainable AI Carbon Intelligence
                   </h2>
-                  <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-ecogreen">
+                  <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-0.5 text-[10px] font-bold text-cyan-300">
                     {explainableAi.ai_generated ? "Autonomous AI Synthesis" : "Deterministic Math Verification"}
                   </span>
                 </div>
@@ -553,8 +576,8 @@ export function DashboardPage() {
           </div>
 
           {/* Natural Language Synthesis Briefing Card */}
-          <div className="mt-5 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4 sm:p-5 dark:border-ecogreen/20 dark:bg-ecogreen/5">
-            <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-ecogreen">
+          <div className="mt-5 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4 sm:p-5 dark:border-cyan-400/20 dark:bg-cyan-400/5">
+            <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-cyan-400">
               <ActivityIcon className="h-4 w-4" /> Period Emissions Briefing
             </h3>
             <p className="mt-2 text-sm leading-relaxed text-slate-700 dark:text-slate-200">
@@ -578,7 +601,7 @@ export function DashboardPage() {
                       {explainableAi.largest_contributor.percentage_of_total}% of measured period footprint
                     </p>
                   </div>
-                  <strong className="text-xl font-black text-emerald-600 dark:text-ecogreen">
+                  <strong className="text-xl font-black text-cyan-400">
                     {number(explainableAi.largest_contributor.emissions_kg)} kg CO₂e
                   </strong>
                 </div>
@@ -610,7 +633,7 @@ export function DashboardPage() {
                   <span
                     className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1 text-sm font-bold ${
                       explainableAi.period_comparison.change_pct <= 0
-                        ? "bg-emerald-500/10 text-emerald-700 dark:bg-ecogreen/15 dark:text-ecogreen"
+                        ? "bg-cyan-500/10 text-cyan-300 dark:bg-cyan-400/15 dark:text-cyan-400"
                         : "bg-rose-500/10 text-rose-700 dark:bg-rose-500/15 dark:text-rose-400"
                     }`}
                   >
@@ -642,7 +665,7 @@ export function DashboardPage() {
                     className="rounded-xl border border-slate-200/70 bg-white/70 p-4 transition-all hover:-translate-y-0.5 dark:border-white/5 dark:bg-white/[0.02]"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold uppercase text-emerald-600 dark:text-ecogreen">
+                      <span className="text-xs font-bold uppercase text-cyan-400">
                         {rec.category}
                       </span>
                       <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:bg-white/10 dark:text-slate-300">
@@ -655,7 +678,7 @@ export function DashboardPage() {
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                       {rec.assumptions}
                     </p>
-                    <div className="mt-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-2.5 text-xs font-semibold text-emerald-800 dark:border-ecogreen/30 dark:bg-ecogreen/15 dark:text-ecogreen">
+                    <div className="mt-3 rounded-xl border border-cyan-500/20 bg-cyan-500/10 p-2.5 text-xs font-semibold text-cyan-300 dark:border-cyan-400/30 dark:bg-cyan-400/15 dark:text-cyan-300">
                       Scenario Potential: Avoid {rec.estimated_avoided_kg} kg CO₂e ({rec.formula})
                     </div>
                   </div>
@@ -685,7 +708,7 @@ export function DashboardPage() {
                           {trace.category} · Origin: {trace.data_origin.replace(/_/g, " ")}
                         </p>
                       </div>
-                      <strong className="text-xs font-bold text-emerald-600 dark:text-ecogreen">
+                      <strong className="text-xs font-bold text-cyan-400">
                         {trace.emissions_kg} kg CO₂e
                       </strong>
                     </div>
@@ -729,13 +752,13 @@ export function DashboardPage() {
                         {data.categories.map((entry) => (
                           <Cell
                             key={entry.category}
-                            fill={CATEGORY_COLORS[entry.category] ?? "#42E695"}
+                            fill={CATEGORY_COLORS[entry.category] ?? "#00E5FF"}
                           />
                         ))}
                       </Pie>
                       <Tooltip
                         contentStyle={{
-                          backgroundColor: "#0D1B2A",
+                          backgroundColor: "#080D1B",
                           borderColor: "rgba(255,255,255,0.1)",
                           borderRadius: "12px",
                           color: "#fff",
@@ -772,8 +795,8 @@ export function DashboardPage() {
                     >
                       <defs>
                         <linearGradient id="emissionsGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#42E695" stopOpacity={0.4} />
-                          <stop offset="95%" stopColor="#42E695" stopOpacity={0.0} />
+                          <stop offset="5%" stopColor="#00E5FF" stopOpacity={0.4} />
+                          <stop offset="95%" stopColor="#00E5FF" stopOpacity={0.0} />
                         </linearGradient>
                       </defs>
                       <CartesianGrid
@@ -798,7 +821,7 @@ export function DashboardPage() {
                       />
                       <Tooltip
                         contentStyle={{
-                          backgroundColor: "#0D1B2A",
+                          backgroundColor: "#080D1B",
                           borderColor: "rgba(255,255,255,0.1)",
                           borderRadius: "12px",
                           color: "#fff",
@@ -811,11 +834,11 @@ export function DashboardPage() {
                         type="monotone"
                         dataKey="emissions_kg"
                         name="Emissions"
-                        stroke="#42E695"
+                        stroke="#00E5FF"
                         strokeWidth={3}
                         fill="url(#emissionsGradient)"
-                        dot={{ r: 4, fill: "#42E695", strokeWidth: 2, stroke: "#07111F" }}
-                        activeDot={{ r: 6, fill: "#20D6C7" }}
+                        dot={{ r: 4, fill: "#00E5FF", strokeWidth: 2, stroke: "#080D1B" }}
+                        activeDot={{ r: 6, fill: "#397BFF" }}
                       />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -855,14 +878,14 @@ export function DashboardPage() {
                       </p>
                     </div>
                     <div className="sm:text-right">
-                      <p className="text-sm font-bold tabular-nums text-emerald-600 dark:text-ecogreen">
+                      <p className="text-sm font-bold tabular-nums text-cyan-400">
                         {number(activity.emissions_kg)} kg CO₂e
                       </p>
                       <a
                         href={activity.factor_source_url}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-[11px] text-teal-600 hover:underline dark:text-ecoteal"
+                        className="text-[11px] text-cyan-400 hover:underline"
                       >
                         {activity.factor_name} · {activity.factor_year}
                       </a>

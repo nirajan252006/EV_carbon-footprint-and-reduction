@@ -1,69 +1,58 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
   darkMode: "class",
   theme: {
     extend: {
       colors: {
-        darkbg: "#07111F",
-        darksurface: "#0D1B2A",
-        darkelevated: "#12243A",
-        ecogreen: "#42E695",
-        ecoteal: "#20D6C7",
-        ecocyan: "#42C9FF",
-        ecoblue: "#4F8CFF",
-        ecoviolet: "#9B7BFF",
-        // Existing tokens preserved for compatibility
-        forest: "#17233D",
-        leaf: "#4266E5",
-        mint: "#E8F1FF",
-        canvas: "#F7F9FC",
-        midnight: "#17233D",
-        ice: "#E8F1FF",
-        lavender: "#F0EBFF",
-        violet: "#8061DB",
-        silver: "#E4E9F2",
-      },
-      fontFamily: {
-        sans: ["Inter", "Segoe UI", "sans-serif"],
+        // Digital Climate Intelligence Palette (Strictly NO GREEN)
+        navy: {
+          950: "#080D1B", // Midnight navy primary canvas
+          900: "#0D142A",
+          800: "#131D3B",
+          700: "#1E2B4F",
+        },
+        violet: {
+          950: "#17102B", // Deep violet surface
+          900: "#22173F",
+          800: "#312059",
+          500: "#A855F7", // Neon violet accent
+          400: "#C084FC",
+        },
+        cyan: {
+          400: "#00E5FF", // Electric cyan primary highlight
+          300: "#33EBFF",
+          500: "#00B8D4",
+        },
+        hologram: {
+          blue: "#397BFF", // Holographic blue
+          magenta: "#F472D0", // Soft magenta
+          amber: "#FFB547", // Amber alerts
+        },
+        cyber: {
+          text: "#F4F7FF", // Primary text
+          muted: "#A8B3CC", // Secondary text
+          glass: "rgba(255, 255, 255, 0.07)",
+          surface: "rgba(13, 20, 42, 0.75)",
+          elevated: "rgba(23, 16, 43, 0.85)",
+          border: "rgba(0, 229, 255, 0.2)",
+          borderViolet: "rgba(168, 85, 247, 0.25)",
+        },
       },
       boxShadow: {
-        "glow-green": "0 0 25px -4px rgba(66, 230, 149, 0.35)",
-        "glow-cyan": "0 0 25px -4px rgba(66, 201, 255, 0.35)",
-        "glow-violet": "0 0 25px -4px rgba(155, 123, 255, 0.3)",
-        "glass-light": "0 18px 45px -18px rgba(49, 92, 133, 0.22)",
-        "glass-dark": "0 22px 50px -20px rgba(0, 0, 0, 0.75), 0 0 25px -12px rgba(66, 230, 149, 0.08)",
+        "glow-cyan": "0 0 25px -4px rgba(0, 229, 255, 0.45)",
+        "glow-violet": "0 0 25px -4px rgba(168, 85, 247, 0.45)",
+        "glow-blue": "0 0 25px -4px rgba(57, 123, 255, 0.45)",
+        "glow-magenta": "0 0 25px -4px rgba(244, 114, 208, 0.45)",
+        "glow-amber": "0 0 25px -4px rgba(255, 181, 71, 0.45)",
+        "glass-cyber": "0 18px 40px -15px rgba(0, 0, 0, 0.7), inset 0 1px 1px 0 rgba(255, 255, 255, 0.1)",
       },
       animation: {
-        "float-slow": "float 7s ease-in-out infinite",
-        "float-medium": "float 5s ease-in-out infinite",
-        "drift-slow": "drift 28s ease-in-out infinite alternate",
-        "pulse-slow": "pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite",
-        "radar-pulse": "radar 2.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite",
-        "particle-1": "floatParticle 12s ease-in-out infinite",
-        "particle-2": "floatParticle 18s ease-in-out infinite 3s",
-        "particle-3": "floatParticle 15s ease-in-out infinite 6s",
-      },
-      keyframes: {
-        float: {
-          "0%, 100%": { transform: "translateY(0px)" },
-          "50%": { transform: "translateY(-8px)" },
-        },
-        drift: {
-          "0%": { transform: "translate3d(0, 0, 0) scale(1)" },
-          "50%": { transform: "translate3d(2.5rem, -1.5rem, 0) scale(1.08)" },
-          "100%": { transform: "translate3d(-1.5rem, 2rem, 0) scale(0.95)" },
-        },
-        radar: {
-          "0%": { transform: "scale(0.95)", opacity: "0.8" },
-          "100%": { transform: "scale(2.4)", opacity: "0" },
-        },
-        floatParticle: {
-          "0%": { transform: "translate3d(0, 0, 0)", opacity: "0" },
-          "20%": { opacity: "0.6" },
-          "80%": { opacity: "0.6" },
-          "100%": { transform: "translate3d(40px, -120px, 0)", opacity: "0" },
-        },
+        "spin-slow": "spin 80s linear infinite",
+        "pulse-fast": "pulse 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+        "radar-ping": "radar-ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite",
+        "float-particle": "float-particle 20s linear infinite",
+        "aurora-shift": "aurora-shift 24s ease-in-out infinite alternate",
       },
     },
   },

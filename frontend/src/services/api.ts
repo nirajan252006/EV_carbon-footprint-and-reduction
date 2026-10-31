@@ -3,17 +3,26 @@ import type {
   AccountType,
   AuthState,
   BillExtractionResult,
+  CampusBus,
   ChatResponse,
   DashboardData,
+  EventEmission,
   ExplainableIntelligence,
+  Facility,
   Factor,
+  FoodWasteRecord,
+  GpsTrip,
+  GreenChallenge,
   HealthStatus,
   IotLatestResponse,
   IotReading,
   IotSummaryResponse,
+  LeaderboardEntry,
+  OperationsAdvisorItem,
   RagDocument,
   Recommendation,
   ReductionGoal,
+  ScopeSummary,
   Workspace,
 } from "../types/api";
 
@@ -177,6 +186,45 @@ export const api = {
       ...jsonBody({ status }),
       method: "PATCH",
     }),
+
+  // GPS Trips
+  startTrip: (mode: string = "car", initialPoint?: { latitude: number; longitude: number; accuracy?: number }) =>
+    request<GpsTrip>("/api/trips/start", jsonBody({ mode, initial_point: initialPoint })),
+  addTripPoints: (tripId: string, points: Array<{ latitude: number; longitude: number; accuracy?: number; timestamp?: number }>) =>
+    request<GpsTrip>(`/api/trips/${encodeURIComponent(tripId)}/points`, jsonBody({ points })),
+  stopTrip: (tripId: string, factorValue?: number, factorName?: string) =>
+    request<GpsTrip>(`/api/trips/${encodeURIComponent(tripId)}/stop`, jsonBody({ factor_value: factorValue, factor_name: factorName })),
+  getTrips: (limit: number = 25) => request<GpsTrip[]>(`/api/trips?limit=${limit}`),
+
+  // Multi-Site & Campus Facilities
+  getFacilities: () => request<Facility[]>("/api/facilities"),
+  addFacility: (value: { name: string; site_type: string; area_sqft?: number; baseline_kwh?: number; baseline_water_l?: number }) =>
+    request<Facility>("/api/facilities", jsonBody(value)),
+
+  // Smart Campus
+  getFoodWaste: (limit: number = 30) => request<FoodWasteRecord[]>(`/api/college/food-waste?limit=${limit}`),
+  addFoodWaste: (value: { date: string; canteen_name: string; meal_type: string; waste_kg: number; diverted_compost_kg?: number }) =>
+    request<FoodWasteRecord>("/api/college/food-waste", jsonBody(value)),
+  getCampusBuses: () => request<CampusBus[]>("/api/college/buses"),
+  addCampusBus: (value: { route_name: string; bus_number: string; distance_km: number; avg_occupancy: number; fuel_type?: string }) =>
+    request<CampusBus>("/api/college/buses", jsonBody(value)),
+  getEvents: () => request<EventEmission[]>("/api/college/events"),
+  calculateEvent: (value: { event_name: string; event_date: string; attendees: number; duration_hours: number; generator_kwh?: number; meals_served?: number; travel_km?: number }) =>
+    request<EventEmission>("/api/college/events", jsonBody(value)),
+  getChallenges: () => request<GreenChallenge[]>("/api/college/challenges"),
+  addChallenge: (value: { title: string; description: string; category: string; target_reduction_pct: number; start_date: string; end_date: string }) =>
+    request<GreenChallenge>("/api/college/challenges", jsonBody(value)),
+  joinChallenge: (challengeId: string, value: { student_name: string; department_or_hostel: string }) =>
+    request<{ id: string; student_name: string; points: number }>(`/api/college/challenges/${encodeURIComponent(challengeId)}/join`, jsonBody(value)),
+  getCampusLeaderboard: () => request<LeaderboardEntry[]>("/api/college/leaderboard"),
+
+  // Enterprise Organization
+  getOperationsAdvisor: (period?: string) =>
+    request<OperationsAdvisorItem[]>(`/api/organization/advisor${period ? `?period=${encodeURIComponent(period)}` : ""}`),
+  getScopes: (period?: string) =>
+    request<ScopeSummary[]>(`/api/organization/scopes${period ? `?period=${encodeURIComponent(period)}` : ""}`),
+  bulkImport: (rows: Array<{ category: string; description: string; quantity: number; unit: string; period: string; reporting_unit?: string }>) =>
+    request<{ imported_count: number; failed_count: number; errors: string[] }>("/api/organization/bulk-import", jsonBody({ rows })),
 
   // Knowledge Assistant RAG
   getDocuments: () => request<RagDocument[]>("/api/documents"),

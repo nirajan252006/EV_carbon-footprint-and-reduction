@@ -231,7 +231,7 @@ export function ActivityPage() {
               className="btn-secondary text-xs"
               title="Initialize standard CEA Grid, EPA Fuel, DEFRA Transport, and WARM Waste factors"
             >
-              <Sparkles className="h-3.5 w-3.5 text-emerald-600 dark:text-ecogreen" />
+              <Sparkles className="h-3.5 w-3.5 text-cyan-400" />
               <span>{seeding ? "Initializing…" : "Initialize Reference Factors"}</span>
             </button>
             <Link to={dashboardPath} className="btn-secondary text-xs">
@@ -242,9 +242,9 @@ export function ActivityPage() {
       />
 
       {seedNotice && (
-        <div className="flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs font-medium text-emerald-900 dark:border-ecogreen/30 dark:bg-ecogreen/10 dark:text-ecogreen">
+        <div className="flex items-center justify-between rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-4 text-xs font-medium text-cyan-300 dark:border-cyan-400/30 dark:bg-cyan-400/10 dark:text-cyan-300">
           <span>{seedNotice}</span>
-          <button onClick={() => setSeedNotice(null)} className="text-emerald-700 hover:text-emerald-900 dark:text-ecogreen">
+          <button onClick={() => setSeedNotice(null)} className="text-cyan-400 hover:text-cyan-200">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -263,7 +263,7 @@ export function ActivityPage() {
           onClick={() => setActiveTab("manual")}
           className={`flex items-center gap-2 border-b-2 px-6 py-3.5 text-sm font-semibold transition-all ${
             activeTab === "manual"
-              ? "border-emerald-500 text-emerald-800 dark:border-ecogreen dark:text-ecogreen"
+              ? "border-cyan-400 text-cyan-400 dark:border-cyan-400 dark:text-cyan-400"
               : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white"
           }`}
         >
@@ -275,7 +275,7 @@ export function ActivityPage() {
           onClick={() => setActiveTab("bill_ocr")}
           className={`flex items-center gap-2 border-b-2 px-6 py-3.5 text-sm font-semibold transition-all ${
             activeTab === "bill_ocr"
-              ? "border-emerald-500 text-emerald-800 dark:border-ecogreen dark:text-ecogreen"
+              ? "border-cyan-400 text-cyan-400 dark:border-cyan-400 dark:text-cyan-400"
               : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white"
           }`}
         >
@@ -319,8 +319,8 @@ export function ActivityPage() {
               onClick={() => fileInputRef.current?.click()}
               className={`relative flex min-h-[200px] cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-6 text-center transition-all ${
                 dragOver
-                  ? "border-emerald-500 bg-emerald-500/10 dark:border-ecogreen dark:bg-ecogreen/15"
-                  : "border-slate-300 bg-white/50 hover:border-emerald-400 hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.02] dark:hover:border-ecogreen/40 dark:hover:bg-white/[0.04]"
+                  ? "border-cyan-400 bg-cyan-400/10 dark:border-cyan-400 dark:bg-cyan-400/15"
+                  : "border-slate-300 bg-white/50 hover:border-cyan-400 hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.02] dark:hover:border-cyan-400/40 dark:hover:bg-white/[0.04]"
               }`}
             >
               <input
@@ -332,7 +332,7 @@ export function ActivityPage() {
                   if (e.target.files?.[0]) onBillFileSelected(e.target.files[0]);
                 }}
               />
-              <div className="mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 text-emerald-600 dark:text-ecogreen border border-emerald-500/30">
+              <div className="mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 text-cyan-400 border border-cyan-500/30">
                 {analyzingBill ? (
                   <RefreshCw className="h-6 w-6 animate-spin" />
                 ) : (
@@ -356,7 +356,7 @@ export function ActivityPage() {
               <div className="mt-6 rounded-2xl border border-slate-200/80 bg-white/70 p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.02]">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3 dark:border-white/5">
                   <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-ecogreen" />
+                    <CheckCircle2 className="h-5 w-5 text-cyan-400" />
                     <span className="text-sm font-bold text-slate-800 dark:text-white">
                       Document Extraction Results
                     </span>
@@ -368,7 +368,7 @@ export function ActivityPage() {
                     <span
                       className={`rounded-full px-2.5 py-0.5 font-bold ${
                         billResult.confidence >= 0.85
-                          ? "bg-emerald-500/10 text-emerald-700 dark:bg-ecogreen/15 dark:text-ecogreen"
+                          ? "bg-cyan-500/10 text-cyan-400 dark:bg-cyan-400/15 dark:text-cyan-400"
                           : "bg-amber-500/10 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
                       }`}
                     >
@@ -468,7 +468,7 @@ export function ActivityPage() {
               </label>
 
               {billSavedActivity && (
-                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs text-emerald-900 dark:border-ecogreen/30 dark:bg-ecogreen/15 dark:text-ecogreen">
+                <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-4 text-xs text-cyan-300 dark:border-cyan-400/30 dark:bg-cyan-400/15 dark:text-cyan-300">
                   <p className="font-bold text-sm">Calculation Recorded!</p>
                   <p className="mt-1">
                     {billSavedActivity.quantity} kWh × {billSavedActivity.factor_value}{" "}
@@ -477,7 +477,7 @@ export function ActivityPage() {
                   </p>
                   <Link
                     to={dashboardPath}
-                    className="mt-2 inline-block font-semibold text-emerald-700 underline dark:text-ecogreen"
+                    className="mt-2 inline-block font-semibold text-cyan-400 underline"
                   >
                     View on Dashboard →
                   </Link>
@@ -508,7 +508,7 @@ export function ActivityPage() {
                     onClick={() => setCategory(item.value)}
                     className={`rounded-xl border p-3 text-center text-xs font-semibold transition-all ${
                       category === item.value
-                        ? "border-emerald-500 bg-emerald-500/10 text-emerald-800 shadow-sm dark:border-ecogreen dark:bg-ecogreen/15 dark:text-ecogreen"
+                        ? "border-cyan-400 bg-cyan-400/10 text-cyan-300 shadow-sm dark:border-cyan-400 dark:bg-cyan-400/15 dark:text-cyan-300"
                         : "border-slate-200 bg-white/70 text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-300 dark:hover:bg-white/[0.06]"
                     }`}
                   >
@@ -631,7 +631,7 @@ export function ActivityPage() {
                   <button
                     type="button"
                     onClick={handleSeedFactors}
-                    className="text-xs font-semibold text-emerald-600 underline dark:text-ecogreen"
+                    className="text-xs font-semibold text-cyan-400 underline"
                   >
                     Seed standard factor set
                   </button>
@@ -674,7 +674,7 @@ export function ActivityPage() {
                   <p>Unit: {selectedFactor.unit}</p>
                   {selectedFactor.source_url && (
                     <a
-                      className="font-semibold text-emerald-600 underline dark:text-ecogreen"
+                      className="font-semibold text-cyan-400 underline"
                       href={selectedFactor.source_url}
                       target="_blank"
                       rel="noreferrer"
@@ -686,8 +686,8 @@ export function ActivityPage() {
               )}
             </div>
 
-            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 dark:border-ecogreen/20 dark:bg-ecogreen/5">
-              <p className="text-xs font-bold uppercase tracking-wide text-emerald-700 dark:text-ecogreen">
+            <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-4 dark:border-cyan-400/20 dark:bg-cyan-400/5">
+              <p className="text-xs font-bold uppercase tracking-wide text-cyan-400">
                 Estimated Calculated Emissions
               </p>
               {previewValid && previewEmissions !== null ? (
@@ -710,7 +710,7 @@ export function ActivityPage() {
             </div>
 
             {saved && (
-              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-900 dark:border-ecogreen/30 dark:bg-ecogreen/15 dark:text-ecogreen">
+              <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-4 text-sm text-cyan-300 dark:border-cyan-400/30 dark:bg-cyan-400/15 dark:text-cyan-300">
                 <p className="font-bold">Activity saved successfully into persistent ledger.</p>
                 <p className="mt-1">
                   {saved.quantity} {saved.unit} × {saved.factor_value} {saved.factor_unit} ={" "}
@@ -718,7 +718,7 @@ export function ActivityPage() {
                 </p>
                 <Link
                   to={dashboardPath}
-                  className="mt-2 inline-block font-semibold text-emerald-700 underline dark:text-ecogreen"
+                  className="mt-2 inline-block font-semibold text-cyan-400 underline"
                 >
                   View on Dashboard →
                 </Link>

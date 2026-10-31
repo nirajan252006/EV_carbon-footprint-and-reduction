@@ -158,9 +158,104 @@ def initialize_database() -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
             CREATE INDEX IF NOT EXISTS idx_goals_workspace ON reduction_goals(workspace_id);
+
+            CREATE TABLE IF NOT EXISTS trips (
+                id TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+                user_id TEXT,
+                mode TEXT NOT NULL,
+                start_time TEXT NOT NULL,
+                end_time TEXT,
+                distance_km REAL NOT NULL DEFAULT 0.0,
+                emissions_kg REAL NOT NULL DEFAULT 0.0,
+                points_json TEXT NOT NULL DEFAULT '[]',
+                status TEXT NOT NULL DEFAULT 'in_progress',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_trips_workspace ON trips(workspace_id);
+
+            CREATE TABLE IF NOT EXISTS facilities_and_sites (
+                id TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                site_type TEXT NOT NULL,
+                area_sqft REAL NOT NULL DEFAULT 0.0,
+                baseline_kwh REAL NOT NULL DEFAULT 0.0,
+                baseline_water_l REAL NOT NULL DEFAULT 0.0,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_facilities_workspace ON facilities_and_sites(workspace_id);
+
+            CREATE TABLE IF NOT EXISTS campus_food_waste (
+                id TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+                date TEXT NOT NULL,
+                canteen_name TEXT NOT NULL,
+                meal_type TEXT NOT NULL,
+                waste_kg REAL NOT NULL,
+                emissions_kg REAL NOT NULL,
+                diverted_compost_kg REAL NOT NULL DEFAULT 0.0,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_food_waste_workspace ON campus_food_waste(workspace_id, date);
+
+            CREATE TABLE IF NOT EXISTS campus_buses (
+                id TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+                route_name TEXT NOT NULL,
+                bus_number TEXT NOT NULL,
+                distance_km REAL NOT NULL,
+                avg_occupancy INTEGER NOT NULL,
+                fuel_type TEXT NOT NULL DEFAULT 'diesel',
+                daily_emissions_kg REAL NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_buses_workspace ON campus_buses(workspace_id);
+
+            CREATE TABLE IF NOT EXISTS event_emissions (
+                id TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+                event_name TEXT NOT NULL,
+                event_date TEXT NOT NULL,
+                attendees INTEGER NOT NULL,
+                duration_hours REAL NOT NULL,
+                breakdown_json TEXT NOT NULL DEFAULT '{}',
+                total_emissions_kg REAL NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_events_workspace ON event_emissions(workspace_id);
+
+            CREATE TABLE IF NOT EXISTS green_challenges (
+                id TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL,
+                category TEXT NOT NULL,
+                target_reduction_pct REAL NOT NULL,
+                start_date TEXT NOT NULL,
+                end_date TEXT NOT NULL,
+                participants_count INTEGER NOT NULL DEFAULT 0,
+                verified_co2e_saved_kg REAL NOT NULL DEFAULT 0.0,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_challenges_workspace ON green_challenges(workspace_id);
+
+            CREATE TABLE IF NOT EXISTS challenge_participants (
+                id TEXT PRIMARY KEY,
+                challenge_id TEXT NOT NULL REFERENCES green_challenges(id) ON DELETE CASCADE,
+                workspace_id TEXT NOT NULL,
+                user_id TEXT,
+                student_name TEXT NOT NULL,
+                department_or_hostel TEXT NOT NULL,
+                points INTEGER NOT NULL DEFAULT 50,
+                joined_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_participants_challenge ON challenge_participants(challenge_id);
             """
         )
         _add_column(connection, 'activities', 'data_origin', "TEXT NOT NULL DEFAULT 'manual'")
+        _add_column(connection, 'activities', 'scope', "TEXT DEFAULT 'scope_2'")
         _add_column(connection, "workspace", "onboarding_complete", "INTEGER NOT NULL DEFAULT 0")
         _add_column(connection, "emission_factors", "workspace_id", "TEXT")
         _add_column(connection, "activities", "workspace_id", "TEXT")
@@ -974,3 +1069,242 @@ def seed_reference_factors_if_empty(workspace_id: str) -> int:
             )
             inserted += 1
         return inserted
+
+
+# --- GPS Trips, Facilities, Campus Food Waste, Fleet & Green Challenges ---
+
+def start_trip(workspace_id: str, mode: str, user_id: str | None = None, initial_point: dict[str, Any] | None = None) -> dict[str, Any]:
+    trip_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    points = [initial_point] if initial_point else []
+    with connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO trips (id, workspace_id, user_id, mode, start_time, distance_km, emissions_kg, points_json, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (trip_id, workspace_id, user_id, mode, now, 0.0, 0.0, json.dumps(points), "in_progress"),
+        )
+        row = connection.execute("SELECT * FROM trips WHERE id = ?", (trip_id,)).fetchone()
+    res = dict(row)
+    res["points"] = points
+    return res
+
+
+def add_trip_points(trip_id: str, new_points: list[dict[str, Any]]) -> dict[str, Any]:
+    with connect() as connection:
+        row = connection.execute("SELECT * FROM trips WHERE id = ?", (trip_id,)).fetchone()
+        if not row:
+            raise ValueError("Trip not found")
+        existing_points = json.loads(row["points_json"] or "[]")
+        existing_points.extend(new_points)
+
+        from .carbon import filter_gps_track
+        dist_km, cleaned = filter_gps_track(existing_points)
+
+        connection.execute(
+            "UPDATE trips SET distance_km = ?, points_json = ? WHERE id = ?",
+            (dist_km, json.dumps(cleaned), trip_id),
+        )
+        updated = connection.execute("SELECT * FROM trips WHERE id = ?", (trip_id,)).fetchone()
+    res = dict(updated)
+    res["points"] = cleaned
+    return res
+
+
+def complete_trip(trip_id: str, factor_val: float = 0.170, factor_name: str = "Passenger Car") -> dict[str, Any]:
+    now = datetime.now(timezone.utc).isoformat()
+    with connect() as connection:
+        row = connection.execute("SELECT * FROM trips WHERE id = ?", (trip_id,)).fetchone()
+        if not row:
+            raise ValueError("Trip not found")
+        pts = json.loads(row["points_json"] or "[]")
+        from .carbon import filter_gps_track
+        dist_km, _ = filter_gps_track(pts)
+        emissions_kg = round(dist_km * factor_val, 4)
+
+        connection.execute(
+            """
+            UPDATE trips SET end_time = ?, distance_km = ?, emissions_kg = ?, status = 'completed'
+            WHERE id = ?
+            """,
+            (now, dist_km, emissions_kg, trip_id),
+        )
+        updated = connection.execute("SELECT * FROM trips WHERE id = ?", (trip_id,)).fetchone()
+    res = dict(updated)
+    res["points"] = pts
+    return res
+
+
+def list_trips(workspace_id: str, limit: int = 25) -> list[dict[str, Any]]:
+    with connect() as connection:
+        rows = connection.execute(
+            "SELECT * FROM trips WHERE workspace_id = ? ORDER BY created_at DESC LIMIT ?",
+            (workspace_id, limit),
+        ).fetchall()
+    trips = []
+    for r in rows:
+        d = dict(r)
+        d["points"] = json.loads(d["points_json"] or "[]")
+        trips.append(d)
+    return trips
+
+
+def create_facility(workspace_id: str, name: str, site_type: str, area_sqft: float = 0.0, baseline_kwh: float = 0.0, baseline_water_l: float = 0.0) -> dict[str, Any]:
+    fid = str(uuid.uuid4())
+    with connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO facilities_and_sites (id, workspace_id, name, site_type, area_sqft, baseline_kwh, baseline_water_l)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (fid, workspace_id, name, site_type, area_sqft, baseline_kwh, baseline_water_l),
+        )
+        row = connection.execute("SELECT * FROM facilities_and_sites WHERE id = ?", (fid,)).fetchone()
+    return dict(row)
+
+
+def list_facilities(workspace_id: str) -> list[dict[str, Any]]:
+    with connect() as connection:
+        rows = connection.execute(
+            "SELECT * FROM facilities_and_sites WHERE workspace_id = ? ORDER BY created_at ASC",
+            (workspace_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_food_waste_record(workspace_id: str, date: str, canteen_name: str, meal_type: str, waste_kg: float, diverted_compost_kg: float = 0.0) -> dict[str, Any]:
+    fid = str(uuid.uuid4())
+    # 1 kg food waste generates ~0.625 kg CO2e in landfill
+    emissions_kg = round(max(0.0, waste_kg - diverted_compost_kg) * 0.625, 4)
+    with connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO campus_food_waste (id, workspace_id, date, canteen_name, meal_type, waste_kg, emissions_kg, diverted_compost_kg)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (fid, workspace_id, date, canteen_name, meal_type, waste_kg, emissions_kg, diverted_compost_kg),
+        )
+        row = connection.execute("SELECT * FROM campus_food_waste WHERE id = ?", (fid,)).fetchone()
+    return dict(row)
+
+
+def list_food_waste_records(workspace_id: str, limit: int = 30) -> list[dict[str, Any]]:
+    with connect() as connection:
+        rows = connection.execute(
+            "SELECT * FROM campus_food_waste WHERE workspace_id = ? ORDER BY date DESC, created_at DESC LIMIT ?",
+            (workspace_id, limit),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_campus_bus(workspace_id: str, route_name: str, bus_number: str, distance_km: float, avg_occupancy: int, fuel_type: str = "diesel") -> dict[str, Any]:
+    bid = str(uuid.uuid4())
+    # Diesel bus emissions ~ 0.85 kgCO2e/vehicle-km
+    daily_emissions = round(distance_km * 0.85, 4)
+    with connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO campus_buses (id, workspace_id, route_name, bus_number, distance_km, avg_occupancy, fuel_type, daily_emissions_kg)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (bid, workspace_id, route_name, bus_number, distance_km, avg_occupancy, fuel_type, daily_emissions),
+        )
+        row = connection.execute("SELECT * FROM campus_buses WHERE id = ?", (bid,)).fetchone()
+    return dict(row)
+
+
+def list_campus_buses(workspace_id: str) -> list[dict[str, Any]]:
+    with connect() as connection:
+        rows = connection.execute(
+            "SELECT * FROM campus_buses WHERE workspace_id = ? ORDER BY created_at ASC",
+            (workspace_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_event_emission(workspace_id: str, event_name: str, event_date: str, attendees: int, duration_hours: float, breakdown: dict[str, Any], total_kg: float) -> dict[str, Any]:
+    eid = str(uuid.uuid4())
+    with connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO event_emissions (id, workspace_id, event_name, event_date, attendees, duration_hours, breakdown_json, total_emissions_kg)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (eid, workspace_id, event_name, event_date, attendees, duration_hours, json.dumps(breakdown), total_kg),
+        )
+        row = connection.execute("SELECT * FROM event_emissions WHERE id = ?", (eid,)).fetchone()
+    res = dict(row)
+    res["breakdown"] = breakdown
+    return res
+
+
+def list_event_emissions(workspace_id: str) -> list[dict[str, Any]]:
+    with connect() as connection:
+        rows = connection.execute(
+            "SELECT * FROM event_emissions WHERE workspace_id = ? ORDER BY event_date DESC",
+            (workspace_id,),
+        ).fetchall()
+    res = []
+    for r in rows:
+        d = dict(r)
+        d["breakdown"] = json.loads(d["breakdown_json"] or "{}")
+        res.append(d)
+    return res
+
+
+def create_green_challenge(workspace_id: str, title: str, description: str, category: str, target_pct: float, start_date: str, end_date: str) -> dict[str, Any]:
+    cid = str(uuid.uuid4())
+    with connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO green_challenges (id, workspace_id, title, description, category, target_reduction_pct, start_date, end_date, participants_count, verified_co2e_saved_kg)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0.0)
+            """,
+            (cid, workspace_id, title, description, category, target_pct, start_date, end_date),
+        )
+        row = connection.execute("SELECT * FROM green_challenges WHERE id = ?", (cid,)).fetchone()
+    return dict(row)
+
+
+def list_green_challenges(workspace_id: str) -> list[dict[str, Any]]:
+    with connect() as connection:
+        rows = connection.execute(
+            "SELECT * FROM green_challenges WHERE workspace_id = ? ORDER BY created_at DESC",
+            (workspace_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def join_green_challenge(challenge_id: str, workspace_id: str, student_name: str, department_or_hostel: str, user_id: str | None = None) -> dict[str, Any]:
+    pid = str(uuid.uuid4())
+    with connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO challenge_participants (id, challenge_id, workspace_id, user_id, student_name, department_or_hostel, points)
+            VALUES (?, ?, ?, ?, ?, ?, 50)
+            """,
+            (pid, challenge_id, workspace_id, user_id, student_name, department_or_hostel),
+        )
+        connection.execute(
+            "UPDATE green_challenges SET participants_count = participants_count + 1 WHERE id = ?",
+            (challenge_id,),
+        )
+        row = connection.execute("SELECT * FROM challenge_participants WHERE id = ?", (pid,)).fetchone()
+    return dict(row)
+
+
+def get_campus_leaderboard(workspace_id: str) -> list[dict[str, Any]]:
+    with connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT department_or_hostel, COUNT(*) as verified_participants, SUM(points) as total_points
+            FROM challenge_participants
+            WHERE workspace_id = ?
+            GROUP BY department_or_hostel
+            ORDER BY total_points DESC
+            LIMIT 10
+            """,
+            (workspace_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
